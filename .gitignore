@@ -1,0 +1,17 @@
+# OS / tools
+.local/
+.config/
+.replit
+*.bin
+
+# uploads & runtime files
+uploads/
+attached_assets/
+*.zip
+
+# node
+node_modules/
+dist/
+build/
+.cache/
+.env
