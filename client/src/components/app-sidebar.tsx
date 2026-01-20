@@ -14,6 +14,7 @@ import {
   Truck,
   Database,
   Store,
+  RotateCcw,
 } from "lucide-react";
 import {
   Sidebar,
@@ -96,6 +97,24 @@ const localTradeItems = [
     url: "/local-trade/parties",
     icon: Users,
     tooltip: "إدارة التجار والعملاء",
+  },
+  {
+    title: "الفواتير",
+    url: "/local-trade/invoices",
+    icon: FileSpreadsheet,
+    tooltip: "فواتير الشراء والمرتجعات",
+  },
+  {
+    title: "المدفوعات",
+    url: "/local-trade/payments",
+    icon: CreditCard,
+    tooltip: "تسجيل المدفوعات والتحصيلات",
+  },
+  {
+    title: "المرتجعات",
+    url: "/local-trade/returns",
+    icon: RotateCcw,
+    tooltip: "حالات المرتجعات والهوامش",
   },
 ];
 

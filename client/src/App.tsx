@@ -32,6 +32,10 @@ const PaymentMethodsReportPage = lazy(
 );
 const BackupPage = lazy(() => import("@/pages/backup"));
 const PartiesPage = lazy(() => import("@/pages/local-trade/parties"));
+const PartyProfilePage = lazy(() => import("@/pages/local-trade/party-profile"));
+const InvoicesPage = lazy(() => import("@/pages/local-trade/invoices"));
+const LocalPaymentsPage = lazy(() => import("@/pages/local-trade/payments"));
+const ReturnsPage = lazy(() => import("@/pages/local-trade/returns"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function AuthenticatedRouter() {
@@ -57,6 +61,10 @@ function AuthenticatedRouter() {
         <Route path="/payment-methods-report" component={PaymentMethodsReportPage} />
         <Route path="/backup" component={BackupPage} />
         <Route path="/local-trade/parties" component={PartiesPage} />
+        <Route path="/local-trade/parties/:id" component={PartyProfilePage} />
+        <Route path="/local-trade/invoices" component={InvoicesPage} />
+        <Route path="/local-trade/payments" component={LocalPaymentsPage} />
+        <Route path="/local-trade/returns" component={ReturnsPage} />
         <Route component={NotFound} />
       </Switch>
     </Suspense>
