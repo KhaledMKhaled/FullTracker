@@ -14,6 +14,11 @@ import {
   insertShippingCompanySchema,
   insertProductTypeSchema,
   insertExchangeRateSchema,
+  insertPartySchema,
+  insertLocalInvoiceSchema,
+  insertLocalInvoiceLineSchema,
+  insertLocalPaymentSchema,
+  insertReturnCaseSchema,
 } from "@shared/schema";
 import { calculatePaymentSnapshot, parseAmountOrZero } from "./services/paymentCalculations";
 import bcrypt from "bcryptjs";
@@ -2472,6 +2477,555 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error uploading backup:", error);
       res.status(500).json({ message: "فشل في رفع النسخة الاحتياطية" });
+    }
+  });
+
+  // ============================================================
+  // Local Trade Routes
+  // ============================================================
+
+  // Parties Routes
+  app.get("/api/local-trade/parties", isAuthenticated, async (req, res) => {
+    try {
+      const filters: { type?: string; isActive?: boolean } = {};
+      if (req.query.type && typeof req.query.type === "string") {
+        filters.type = req.query.type;
+      }
+      if (req.query.isActive !== undefined) {
+        filters.isActive = req.query.isActive === "true";
+      }
+      const parties = await routeStorage.getAllParties(filters);
+      res.json(parties);
+    } catch (error) {
+      console.error("Error fetching parties:", error);
+      res.status(500).json({ message: "خطأ في جلب بيانات الملفات" });
+    }
+  });
+
+  app.get("/api/local-trade/parties/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const party = await routeStorage.getParty(id);
+      if (!party) {
+        return res.status(404).json({ message: "الملف غير موجود" });
+      }
+      res.json(party);
+    } catch (error) {
+      console.error("Error fetching party:", error);
+      res.status(500).json({ message: "خطأ في جلب بيانات الملف" });
+    }
+  });
+
+  app.get("/api/local-trade/parties/:id/profile", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const profile = await routeStorage.getPartyProfile(id);
+      if (!profile) {
+        return res.status(404).json({ message: "الملف غير موجود" });
+      }
+      res.json(profile);
+    } catch (error) {
+      console.error("Error fetching party profile:", error);
+      res.status(500).json({ message: "خطأ في جلب بيانات الملف" });
+    }
+  });
+
+  app.post("/api/local-trade/parties", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const data = insertPartySchema.parse(req.body);
+      
+      // Create the party
+      const party = await routeStorage.createParty(data);
+      
+      // Create initial season
+      const season = await routeStorage.createSeason({
+        partyId: party.id,
+        seasonName: "الموسم الأول",
+        isCurrent: true,
+        openingBalanceEgp: data.openingBalanceEgp || "0",
+      });
+      
+      // Create opening balance ledger entry if there's an opening balance
+      const openingBalance = parseFloat(data.openingBalanceEgp || "0");
+      if (openingBalance !== 0) {
+        const amount = data.openingBalanceType === "credit" ? -openingBalance : openingBalance;
+        await routeStorage.createLedgerEntry({
+          partyId: party.id,
+          seasonId: season.id,
+          entryType: "opening_balance",
+          sourceType: "party",
+          sourceId: party.id,
+          amountEgp: amount.toString(),
+          note: "رصيد افتتاحي",
+          createdByUserId: userId,
+        });
+      }
+      
+      auditLogger({
+        userId,
+        entityType: "PARTY",
+        entityId: String(party.id),
+        actionType: "CREATE",
+        details: { type: party.type, name: party.name },
+      });
+      
+      res.json(party);
+    } catch (error) {
+      console.error("Error creating party:", error);
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "بيانات غير صحيحة", errors: error.errors });
+      }
+      res.status(500).json({ message: "خطأ في إنشاء الملف" });
+    }
+  });
+
+  app.patch("/api/local-trade/parties/:id", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+      
+      const party = await routeStorage.updateParty(id, req.body);
+      if (!party) {
+        return res.status(404).json({ message: "الملف غير موجود" });
+      }
+      
+      auditLogger({
+        userId,
+        entityType: "PARTY",
+        entityId: String(id),
+        actionType: "UPDATE",
+        details: req.body,
+      });
+      
+      res.json(party);
+    } catch (error) {
+      console.error("Error updating party:", error);
+      res.status(500).json({ message: "خطأ في تحديث الملف" });
+    }
+  });
+
+  // Party Seasons Routes
+  app.get("/api/local-trade/parties/:id/seasons", isAuthenticated, async (req, res) => {
+    try {
+      const partyId = parseInt(req.params.id);
+      const seasons = await routeStorage.getPartySeasons(partyId);
+      res.json(seasons);
+    } catch (error) {
+      console.error("Error fetching party seasons:", error);
+      res.status(500).json({ message: "خطأ في جلب مواسم الملف" });
+    }
+  });
+
+  app.post("/api/local-trade/parties/:id/settlement", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const partyId = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+      
+      // Check party exists
+      const party = await routeStorage.getParty(partyId);
+      if (!party) {
+        return res.status(404).json({ message: "الملف غير موجود" });
+      }
+      
+      // Get current season
+      const currentSeason = await routeStorage.getCurrentSeason(partyId);
+      if (!currentSeason) {
+        return res.status(400).json({ message: "لا يوجد موسم حالي لهذا الملف" });
+      }
+      
+      // Check balance is zero
+      const balance = await routeStorage.getPartyBalance(partyId, currentSeason.id);
+      if (parseFloat(balance.balanceEgp) !== 0) {
+        return res.status(400).json({ 
+          message: "لا يمكن إنشاء فاتورة تسوية إلا عندما يكون الرصيد صفر",
+          currentBalance: balance.balanceEgp,
+          direction: balance.direction,
+        });
+      }
+      
+      // Generate reference number
+      const referenceNumber = await routeStorage.generateInvoiceReferenceNumber("settlement");
+      
+      // Create settlement invoice
+      const invoice = await routeStorage.createLocalInvoice({
+        partyId,
+        seasonId: currentSeason.id,
+        invoiceKind: "settlement",
+        status: "posted",
+        invoiceDate: new Date().toISOString().slice(0, 10),
+        referenceNumber,
+        totalCartons: 0,
+        totalPieces: 0,
+        subtotalEgp: "0",
+        totalEgp: "0",
+        notes: "فاتورة تسوية",
+        createdByUserId: userId,
+      }, []);
+      
+      // Close current season
+      await routeStorage.closeSeason(currentSeason.id);
+      
+      // Create new season
+      await routeStorage.createSeason({
+        partyId,
+        seasonName: `موسم ${new Date().getFullYear()}`,
+        isCurrent: true,
+        openingBalanceEgp: "0",
+      });
+      
+      auditLogger({
+        userId,
+        entityType: "LOCAL_INVOICE",
+        entityId: String(invoice.id),
+        actionType: "CREATE",
+        details: { invoiceKind: "settlement", partyId },
+      });
+      
+      res.json(invoice);
+    } catch (error) {
+      console.error("Error creating settlement:", error);
+      res.status(500).json({ message: "خطأ في إنشاء فاتورة التسوية" });
+    }
+  });
+
+  // Local Invoices Routes
+  app.get("/api/local-trade/invoices", isAuthenticated, async (req, res) => {
+    try {
+      const filters: { partyId?: number; invoiceKind?: string; status?: string } = {};
+      if (req.query.partyId) {
+        filters.partyId = parseInt(req.query.partyId as string);
+      }
+      if (req.query.invoiceKind && typeof req.query.invoiceKind === "string") {
+        filters.invoiceKind = req.query.invoiceKind;
+      }
+      if (req.query.status && typeof req.query.status === "string") {
+        filters.status = req.query.status;
+      }
+      const invoices = await routeStorage.getAllLocalInvoices(filters);
+      res.json(invoices);
+    } catch (error) {
+      console.error("Error fetching invoices:", error);
+      res.status(500).json({ message: "خطأ في جلب الفواتير" });
+    }
+  });
+
+  app.get("/api/local-trade/invoices/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const invoiceData = await routeStorage.getLocalInvoice(id);
+      if (!invoiceData) {
+        return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      }
+      res.json(invoiceData);
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+      res.status(500).json({ message: "خطأ في جلب الفاتورة" });
+    }
+  });
+
+  app.post("/api/local-trade/invoices", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const { lines, ...invoiceData } = req.body;
+      
+      // Validate invoice data
+      const validatedInvoice = insertLocalInvoiceSchema.parse(invoiceData);
+      
+      // Validate lines if provided
+      const validatedLines = (lines || []).map((line: any) => 
+        insertLocalInvoiceLineSchema.omit({ invoiceId: true }).parse(line)
+      );
+      
+      // Check credit limit for credit parties
+      const party = await routeStorage.getParty(validatedInvoice.partyId);
+      if (!party) {
+        return res.status(400).json({ message: "الملف غير موجود" });
+      }
+      
+      if (party.paymentTerms === "credit" && party.creditLimitMode === "limited") {
+        const currentSeason = await routeStorage.getCurrentSeason(party.id);
+        const balance = await routeStorage.getPartyBalance(party.id, currentSeason?.id);
+        const currentBalance = parseFloat(balance.balanceEgp);
+        const invoiceTotal = parseFloat(validatedInvoice.totalEgp || "0");
+        const creditLimit = parseFloat(party.creditLimitAmountEgp || "0");
+        
+        // For customers (sales), check if adding this invoice would exceed credit limit
+        if (validatedInvoice.invoiceKind === "sale" && currentBalance + invoiceTotal > creditLimit) {
+          return res.status(400).json({
+            message: "الفاتورة ستتجاوز الحد الائتماني للعميل",
+            currentBalance: currentBalance.toFixed(2),
+            invoiceTotal: invoiceTotal.toFixed(2),
+            creditLimit: creditLimit.toFixed(2),
+          });
+        }
+      }
+      
+      // Generate reference number if not provided
+      if (!validatedInvoice.referenceNumber) {
+        validatedInvoice.referenceNumber = await routeStorage.generateInvoiceReferenceNumber(
+          validatedInvoice.invoiceKind
+        );
+      }
+      
+      // Get current season
+      const currentSeason = await routeStorage.getCurrentSeason(validatedInvoice.partyId);
+      if (currentSeason) {
+        validatedInvoice.seasonId = currentSeason.id;
+      }
+      
+      validatedInvoice.createdByUserId = userId;
+      
+      const invoice = await routeStorage.createLocalInvoice(validatedInvoice, validatedLines);
+      
+      // Create ledger entry for the invoice
+      const invoiceTotal = parseFloat(validatedInvoice.totalEgp || "0");
+      if (invoiceTotal !== 0) {
+        // For sales: positive (customer owes us), for purchases: negative (we owe merchant)
+        const amount = validatedInvoice.invoiceKind === "sale" ? invoiceTotal : -invoiceTotal;
+        await routeStorage.createLedgerEntry({
+          partyId: validatedInvoice.partyId,
+          seasonId: currentSeason?.id,
+          entryType: "invoice",
+          sourceType: "local_invoice",
+          sourceId: invoice.id,
+          amountEgp: amount.toString(),
+          note: `فاتورة ${validatedInvoice.invoiceKind === "sale" ? "بيع" : "شراء"} رقم ${invoice.referenceNumber}`,
+          createdByUserId: userId,
+        });
+      }
+      
+      auditLogger({
+        userId,
+        entityType: "LOCAL_INVOICE",
+        entityId: String(invoice.id),
+        actionType: "CREATE",
+        details: { invoiceKind: invoice.invoiceKind, partyId: invoice.partyId, totalEgp: invoice.totalEgp },
+      });
+      
+      res.json(invoice);
+    } catch (error) {
+      console.error("Error creating invoice:", error);
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "بيانات غير صحيحة", errors: error.errors });
+      }
+      res.status(500).json({ message: "خطأ في إنشاء الفاتورة" });
+    }
+  });
+
+  app.patch("/api/local-trade/invoices/:id", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+      
+      const invoice = await routeStorage.updateLocalInvoice(id, req.body);
+      if (!invoice) {
+        return res.status(404).json({ message: "الفاتورة غير موجودة" });
+      }
+      
+      auditLogger({
+        userId,
+        entityType: "LOCAL_INVOICE",
+        entityId: String(id),
+        actionType: "UPDATE",
+        details: req.body,
+      });
+      
+      res.json(invoice);
+    } catch (error) {
+      console.error("Error updating invoice:", error);
+      res.status(500).json({ message: "خطأ في تحديث الفاتورة" });
+    }
+  });
+
+  app.post("/api/local-trade/invoices/:id/receive", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+      
+      const result = await routeStorage.receiveInvoice(id, userId);
+      
+      auditLogger({
+        userId,
+        entityType: "LOCAL_INVOICE",
+        entityId: String(id),
+        actionType: "UPDATE",
+        details: { action: "RECEIVE", movementsCreated: result.movementsCreated },
+      });
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error receiving invoice:", error);
+      res.status(500).json({ message: "خطأ في استلام الفاتورة" });
+    }
+  });
+
+  // Local Payments Routes
+  app.get("/api/local-trade/payments", isAuthenticated, async (req, res) => {
+    try {
+      const filters: { partyId?: number } = {};
+      if (req.query.partyId) {
+        filters.partyId = parseInt(req.query.partyId as string);
+      }
+      const payments = await routeStorage.getLocalPayments(filters);
+      res.json(payments);
+    } catch (error) {
+      console.error("Error fetching local payments:", error);
+      res.status(500).json({ message: "خطأ في جلب الدفعات" });
+    }
+  });
+
+  app.post("/api/local-trade/payments", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const data = insertLocalPaymentSchema.parse(req.body);
+      
+      // Get current season
+      const currentSeason = await routeStorage.getCurrentSeason(data.partyId);
+      if (currentSeason) {
+        data.seasonId = currentSeason.id;
+      }
+      
+      data.createdByUserId = userId;
+      
+      const payment = await routeStorage.createLocalPayment(data);
+      
+      // Create ledger entry for the payment
+      // For payments received from customers: negative (reduces what they owe)
+      // For payments made to merchants: positive (reduces what we owe)
+      const party = await routeStorage.getParty(data.partyId);
+      const paymentAmount = parseFloat(data.amountEgp);
+      const amount = party?.type === "customer" ? -paymentAmount : paymentAmount;
+      
+      await routeStorage.createLedgerEntry({
+        partyId: data.partyId,
+        seasonId: currentSeason?.id,
+        entryType: "payment",
+        sourceType: "local_payment",
+        sourceId: payment.id,
+        amountEgp: amount.toString(),
+        note: `دفعة بتاريخ ${data.paymentDate}`,
+        createdByUserId: userId,
+      });
+      
+      auditLogger({
+        userId,
+        entityType: "LOCAL_PAYMENT",
+        entityId: String(payment.id),
+        actionType: "CREATE",
+        details: { partyId: payment.partyId, amountEgp: payment.amountEgp },
+      });
+      
+      res.json(payment);
+    } catch (error) {
+      console.error("Error creating local payment:", error);
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "بيانات غير صحيحة", errors: error.errors });
+      }
+      res.status(500).json({ message: "خطأ في إنشاء الدفعة" });
+    }
+  });
+
+  // Return Cases Routes
+  app.get("/api/local-trade/return-cases", isAuthenticated, async (req, res) => {
+    try {
+      const filters: { partyId?: number; status?: string } = {};
+      if (req.query.partyId) {
+        filters.partyId = parseInt(req.query.partyId as string);
+      }
+      if (req.query.status && typeof req.query.status === "string") {
+        filters.status = req.query.status;
+      }
+      const returnCases = await routeStorage.getReturnCases(filters);
+      res.json(returnCases);
+    } catch (error) {
+      console.error("Error fetching return cases:", error);
+      res.status(500).json({ message: "خطأ في جلب حالات المرتجعات" });
+    }
+  });
+
+  app.get("/api/local-trade/return-cases/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const returnCase = await routeStorage.getReturnCase(id);
+      if (!returnCase) {
+        return res.status(404).json({ message: "حالة المرتجع غير موجودة" });
+      }
+      res.json(returnCase);
+    } catch (error) {
+      console.error("Error fetching return case:", error);
+      res.status(500).json({ message: "خطأ في جلب حالة المرتجع" });
+    }
+  });
+
+  app.post("/api/local-trade/return-cases", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const userId = (req.user as any)?.id;
+      const data = insertReturnCaseSchema.parse(req.body);
+      
+      // Get party to snapshot type
+      const party = await routeStorage.getParty(data.partyId);
+      if (!party) {
+        return res.status(400).json({ message: "الملف غير موجود" });
+      }
+      
+      data.partyTypeSnapshot = party.type;
+      data.status = "under_inspection";
+      data.createdByUserId = userId;
+      
+      // Get current season
+      const currentSeason = await routeStorage.getCurrentSeason(data.partyId);
+      if (currentSeason) {
+        data.seasonId = currentSeason.id;
+      }
+      
+      const returnCase = await routeStorage.createReturnCase(data);
+      
+      auditLogger({
+        userId,
+        entityType: "RETURN_CASE",
+        entityId: String(returnCase.id),
+        actionType: "CREATE",
+        details: { partyId: returnCase.partyId, pieces: returnCase.pieces },
+      });
+      
+      res.json(returnCase);
+    } catch (error) {
+      console.error("Error creating return case:", error);
+      if (error instanceof ZodError) {
+        return res.status(400).json({ message: "بيانات غير صحيحة", errors: error.errors });
+      }
+      res.status(500).json({ message: "خطأ في إنشاء حالة المرتجع" });
+    }
+  });
+
+  app.post("/api/local-trade/return-cases/:id/resolve", requireRole(["مدير", "محاسب"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+      const { resolution } = req.body;
+      
+      if (!resolution) {
+        return res.status(400).json({ message: "يجب تحديد نوع الحل" });
+      }
+      
+      const returnCase = await routeStorage.resolveReturnCase(id, resolution, userId);
+      if (!returnCase) {
+        return res.status(404).json({ message: "حالة المرتجع غير موجودة" });
+      }
+      
+      auditLogger({
+        userId,
+        entityType: "RETURN_CASE",
+        entityId: String(id),
+        actionType: "UPDATE",
+        details: { action: "RESOLVE", resolution },
+      });
+      
+      res.json(returnCase);
+    } catch (error) {
+      console.error("Error resolving return case:", error);
+      res.status(500).json({ message: "خطأ في حل حالة المرتجع" });
     }
   });
 }

@@ -13,6 +13,7 @@ import {
   Tag,
   Truck,
   Database,
+  Store,
 } from "lucide-react";
 import {
   Sidebar,
@@ -86,6 +87,15 @@ const menuItems = [
     url: "/payments",
     icon: CreditCard,
     tooltip: "متابعة إجمالي ما تم دفعه وما هو متبقي على جميع الشحنات",
+  },
+];
+
+const localTradeItems = [
+  {
+    title: "الملفات",
+    url: "/local-trade/parties",
+    icon: Users,
+    tooltip: "إدارة التجار والعملاء",
   },
 ];
 
@@ -170,6 +180,35 @@ export function AppSidebar() {
                         asChild
                         isActive={location === item.url}
                         data-testid={`nav-${item.url.replace("/", "") || "dashboard"}`}
+                      >
+                        <Link href={item.url}>
+                          <item.icon className="w-5 h-5" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </TooltipTrigger>
+                    <TooltipContent side="left" className="max-w-xs">
+                      {item.tooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>التجارة المحلية</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {localTradeItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={location === item.url || location.startsWith("/local-trade/")}
+                        data-testid={`nav-${item.url.replace(/\//g, "-").slice(1)}`}
                       >
                         <Link href={item.url}>
                           <item.icon className="w-5 h-5" />
