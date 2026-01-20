@@ -15,6 +15,14 @@ import {
   paymentAllocations,
   inventoryMovements,
   auditLogs,
+  parties,
+  partySeasons,
+  localInvoices,
+  localInvoiceLines,
+  localReceipts,
+  partyLedgerEntries,
+  localPayments,
+  returnCases,
   type User,
   type UpsertUser,
   type Supplier,
@@ -42,6 +50,22 @@ import {
   type InsertInventoryMovement,
   type AuditLog,
   type InsertAuditLog,
+  type Party,
+  type InsertParty,
+  type PartySeason,
+  type InsertPartySeason,
+  type LocalInvoice,
+  type InsertLocalInvoice,
+  type LocalInvoiceLine,
+  type InsertLocalInvoiceLine,
+  type LocalReceipt,
+  type InsertLocalReceipt,
+  type PartyLedgerEntry,
+  type InsertPartyLedgerEntry,
+  type LocalPayment,
+  type InsertLocalPayment,
+  type ReturnCase,
+  type InsertReturnCase,
 } from "@shared/schema";
 import { normalizePaymentAmounts, roundAmount } from "./services/currency";
 import { getCurrencyTotals } from "./services/currencyTotals";
@@ -857,6 +881,62 @@ export interface IStorage {
     paymentCount: number;
     totalAmountEgp: string;
   }>>;
+
+  // ============================================================
+  // LOCAL TRADE MODULE METHODS
+  // ============================================================
+
+  // Parties
+  getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<Party[]>;
+  getParty(id: number): Promise<Party | undefined>;
+  createParty(data: InsertParty): Promise<Party>;
+  updateParty(id: number, data: Partial<InsertParty>): Promise<Party | undefined>;
+  getPartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }>;
+  getPartyProfile(partyId: number): Promise<{
+    party: Party;
+    currentSeason: PartySeason | null;
+    balance: { balanceEgp: string; direction: 'debit' | 'credit' | 'zero' };
+    totalInvoices: number;
+    totalPayments: number;
+    openReturnCases: number;
+  } | undefined>;
+
+  // Party Seasons
+  getPartySeasons(partyId: number): Promise<PartySeason[]>;
+  getCurrentSeason(partyId: number): Promise<PartySeason | undefined>;
+  createSeason(data: InsertPartySeason): Promise<PartySeason>;
+  closeSeason(seasonId: number): Promise<PartySeason | undefined>;
+
+  // Local Invoices
+  getAllLocalInvoices(filters?: { partyId?: number; invoiceKind?: string; status?: string }): Promise<LocalInvoice[]>;
+  getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice; lines: LocalInvoiceLine[] } | undefined>;
+  createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice>;
+  updateLocalInvoice(id: number, data: Partial<InsertLocalInvoice>): Promise<LocalInvoice | undefined>;
+  generateInvoiceReferenceNumber(kind: string): Promise<string>;
+
+  // Local Invoice Lines
+  getInvoiceLines(invoiceId: number): Promise<LocalInvoiceLine[]>;
+  createInvoiceLine(data: InsertLocalInvoiceLine): Promise<LocalInvoiceLine>;
+  updateInvoiceLine(id: number, data: Partial<InsertLocalInvoiceLine>): Promise<LocalInvoiceLine | undefined>;
+  deleteInvoiceLine(id: number): Promise<boolean>;
+
+  // Local Receipts
+  createReceipt(data: InsertLocalReceipt): Promise<LocalReceipt>;
+  receiveInvoice(invoiceId: number, userId: string): Promise<{ receipt: LocalReceipt; movementsCreated: number }>;
+
+  // Party Ledger Entries
+  getPartyLedger(partyId: number, seasonId?: number): Promise<PartyLedgerEntry[]>;
+  createLedgerEntry(data: InsertPartyLedgerEntry): Promise<PartyLedgerEntry>;
+
+  // Local Payments
+  getLocalPayments(filters?: { partyId?: number }): Promise<LocalPayment[]>;
+  createLocalPayment(data: InsertLocalPayment): Promise<LocalPayment>;
+
+  // Return Cases
+  getReturnCases(filters?: { partyId?: number; status?: string }): Promise<ReturnCase[]>;
+  getReturnCase(id: number): Promise<ReturnCase | undefined>;
+  createReturnCase(data: InsertReturnCase): Promise<ReturnCase>;
+  resolveReturnCase(id: number, resolution: string, userId: string): Promise<ReturnCase | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3547,6 +3627,358 @@ export class DatabaseStorage implements IStorage {
       totalAmountEgp: stats.totalEgp.toFixed(2),
       totalAmountRmb: stats.totalRmb.toFixed(2),
     }));
+  }
+
+  // ============================================================
+  // LOCAL TRADE MODULE METHODS
+  // ============================================================
+
+  // Parties
+  async getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<Party[]> {
+    let query = db.select().from(parties);
+    const conditions: any[] = [];
+
+    if (filters?.type) {
+      conditions.push(eq(parties.type, filters.type));
+    }
+    if (filters?.isActive !== undefined) {
+      conditions.push(eq(parties.isActive, filters.isActive));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    return query.orderBy(desc(parties.createdAt));
+  }
+
+  async getParty(id: number): Promise<Party | undefined> {
+    const [party] = await db.select().from(parties).where(eq(parties.id, id));
+    return party;
+  }
+
+  async createParty(data: InsertParty): Promise<Party> {
+    const [party] = await db.insert(parties).values(data).returning();
+    return party;
+  }
+
+  async updateParty(id: number, data: Partial<InsertParty>): Promise<Party | undefined> {
+    const [party] = await db
+      .update(parties)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(parties.id, id))
+      .returning();
+    return party;
+  }
+
+  async getPartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }> {
+    const conditions = [eq(partyLedgerEntries.partyId, partyId)];
+    if (seasonId !== undefined) {
+      conditions.push(eq(partyLedgerEntries.seasonId, seasonId));
+    }
+
+    const entries = await db
+      .select()
+      .from(partyLedgerEntries)
+      .where(and(...conditions));
+    const totalBalance = entries.reduce((sum, entry) => sum + parseAmount(entry.amountEgp), 0);
+    
+    let direction: 'debit' | 'credit' | 'zero' = 'zero';
+    if (totalBalance > 0) {
+      direction = 'debit';
+    } else if (totalBalance < 0) {
+      direction = 'credit';
+    }
+
+    return {
+      balanceEgp: Math.abs(totalBalance).toFixed(2),
+      direction,
+    };
+  }
+
+  async getPartyProfile(partyId: number): Promise<{
+    party: Party;
+    currentSeason: PartySeason | null;
+    balance: { balanceEgp: string; direction: 'debit' | 'credit' | 'zero' };
+    totalInvoices: number;
+    totalPayments: number;
+    openReturnCases: number;
+  } | undefined> {
+    const party = await this.getParty(partyId);
+    if (!party) return undefined;
+
+    const currentSeason = await this.getCurrentSeason(partyId) ?? null;
+    const balance = await this.getPartyBalance(partyId, currentSeason?.id);
+
+    const invoices = await db.select().from(localInvoices).where(eq(localInvoices.partyId, partyId));
+    const payments = await db.select().from(localPayments).where(eq(localPayments.partyId, partyId));
+    const openCases = await db.select().from(returnCases).where(
+      and(
+        eq(returnCases.partyId, partyId),
+        eq(returnCases.status, 'under_inspection')
+      )
+    );
+
+    return {
+      party,
+      currentSeason,
+      balance,
+      totalInvoices: invoices.length,
+      totalPayments: payments.length,
+      openReturnCases: openCases.length,
+    };
+  }
+
+  // Party Seasons
+  async getPartySeasons(partyId: number): Promise<PartySeason[]> {
+    return db.select().from(partySeasons).where(eq(partySeasons.partyId, partyId)).orderBy(desc(partySeasons.startedAt));
+  }
+
+  async getCurrentSeason(partyId: number): Promise<PartySeason | undefined> {
+    const [season] = await db
+      .select()
+      .from(partySeasons)
+      .where(and(eq(partySeasons.partyId, partyId), eq(partySeasons.isCurrent, true)));
+    return season;
+  }
+
+  async createSeason(data: InsertPartySeason): Promise<PartySeason> {
+    const [season] = await db.insert(partySeasons).values(data).returning();
+    return season;
+  }
+
+  async closeSeason(seasonId: number): Promise<PartySeason | undefined> {
+    const [season] = await db
+      .update(partySeasons)
+      .set({ isCurrent: false, endedAt: new Date() })
+      .where(eq(partySeasons.id, seasonId))
+      .returning();
+    return season;
+  }
+
+  // Local Invoices
+  async getAllLocalInvoices(filters?: { partyId?: number; invoiceKind?: string; status?: string }): Promise<LocalInvoice[]> {
+    let query = db.select().from(localInvoices);
+    const conditions: any[] = [];
+
+    if (filters?.partyId) {
+      conditions.push(eq(localInvoices.partyId, filters.partyId));
+    }
+    if (filters?.invoiceKind) {
+      conditions.push(eq(localInvoices.invoiceKind, filters.invoiceKind));
+    }
+    if (filters?.status) {
+      conditions.push(eq(localInvoices.status, filters.status));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    return query.orderBy(desc(localInvoices.createdAt));
+  }
+
+  async getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice; lines: LocalInvoiceLine[] } | undefined> {
+    const [invoice] = await db.select().from(localInvoices).where(eq(localInvoices.id, id));
+    if (!invoice) return undefined;
+
+    const lines = await this.getInvoiceLines(id);
+    return { invoice, lines };
+  }
+
+  async createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice> {
+    const [invoice] = await db.insert(localInvoices).values(data).returning();
+    
+    if (lines.length > 0) {
+      const linesWithInvoiceId = lines.map(line => ({ ...line, invoiceId: invoice.id }));
+      await db.insert(localInvoiceLines).values(linesWithInvoiceId);
+    }
+
+    return invoice;
+  }
+
+  async updateLocalInvoice(id: number, data: Partial<InsertLocalInvoice>): Promise<LocalInvoice | undefined> {
+    const [invoice] = await db
+      .update(localInvoices)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(localInvoices.id, id))
+      .returning();
+    return invoice;
+  }
+
+  async generateInvoiceReferenceNumber(kind: string): Promise<string> {
+    const prefixMap: Record<string, string> = {
+      purchase: 'PI',
+      sale: 'SI',
+      settlement: 'SET',
+      return: 'RET',
+    };
+    const prefix = prefixMap[kind] || 'INV';
+    
+    const today = new Date();
+    const dateStr = today.toISOString().slice(0, 10).replace(/-/g, '');
+    
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    
+    const existingInvoices = await db
+      .select()
+      .from(localInvoices)
+      .where(
+        and(
+          eq(localInvoices.invoiceKind, kind),
+          sql`${localInvoices.createdAt} >= ${todayStart}`,
+          sql`${localInvoices.createdAt} < ${todayEnd}`
+        )
+      );
+    
+    const sequence = (existingInvoices.length + 1).toString().padStart(4, '0');
+    return `${prefix}-${dateStr}-${sequence}`;
+  }
+
+  // Local Invoice Lines
+  async getInvoiceLines(invoiceId: number): Promise<LocalInvoiceLine[]> {
+    return db.select().from(localInvoiceLines).where(eq(localInvoiceLines.invoiceId, invoiceId));
+  }
+
+  async createInvoiceLine(data: InsertLocalInvoiceLine): Promise<LocalInvoiceLine> {
+    const [line] = await db.insert(localInvoiceLines).values(data).returning();
+    return line;
+  }
+
+  async updateInvoiceLine(id: number, data: Partial<InsertLocalInvoiceLine>): Promise<LocalInvoiceLine | undefined> {
+    const [line] = await db
+      .update(localInvoiceLines)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(localInvoiceLines.id, id))
+      .returning();
+    return line;
+  }
+
+  async deleteInvoiceLine(id: number): Promise<boolean> {
+    const result = await db.delete(localInvoiceLines).where(eq(localInvoiceLines.id, id));
+    return (result.rowCount ?? 0) > 0;
+  }
+
+  // Local Receipts
+  async createReceipt(data: InsertLocalReceipt): Promise<LocalReceipt> {
+    const [receipt] = await db.insert(localReceipts).values(data).returning();
+    return receipt;
+  }
+
+  async receiveInvoice(invoiceId: number, userId: string): Promise<{ receipt: LocalReceipt; movementsCreated: number }> {
+    const invoiceData = await this.getLocalInvoice(invoiceId);
+    if (!invoiceData) {
+      throw new Error('Invoice not found');
+    }
+
+    const { invoice, lines } = invoiceData;
+
+    await this.updateLocalInvoice(invoiceId, { status: 'received' });
+
+    const receipt = await this.createReceipt({
+      invoiceId,
+      receivingStatus: 'received',
+      receivedAt: new Date(),
+      receivedByUserId: userId,
+    });
+
+    let movementsCreated = 0;
+    const movementDate = new Date().toISOString().slice(0, 10);
+
+    for (const line of lines) {
+      if (invoice.invoiceKind === 'purchase') {
+        await this.createInventoryMovement({
+          productId: line.productTypeId,
+          totalPiecesIn: line.totalPieces,
+          unitCostEgp: line.unitPriceEgp,
+          totalCostEgp: line.lineTotalEgp,
+          movementDate,
+        });
+        movementsCreated++;
+      }
+    }
+
+    return { receipt, movementsCreated };
+  }
+
+  // Party Ledger Entries
+  async getPartyLedger(partyId: number, seasonId?: number): Promise<PartyLedgerEntry[]> {
+    const conditions = [eq(partyLedgerEntries.partyId, partyId)];
+    if (seasonId !== undefined) {
+      conditions.push(eq(partyLedgerEntries.seasonId, seasonId));
+    }
+
+    return db
+      .select()
+      .from(partyLedgerEntries)
+      .where(and(...conditions))
+      .orderBy(asc(partyLedgerEntries.createdAt));
+  }
+
+  async createLedgerEntry(data: InsertPartyLedgerEntry): Promise<PartyLedgerEntry> {
+    const [entry] = await db.insert(partyLedgerEntries).values(data).returning();
+    return entry;
+  }
+
+  // Local Payments
+  async getLocalPayments(filters?: { partyId?: number }): Promise<LocalPayment[]> {
+    let query = db.select().from(localPayments);
+    
+    if (filters?.partyId) {
+      query = query.where(eq(localPayments.partyId, filters.partyId)) as any;
+    }
+
+    return query.orderBy(desc(localPayments.createdAt));
+  }
+
+  async createLocalPayment(data: InsertLocalPayment): Promise<LocalPayment> {
+    const [payment] = await db.insert(localPayments).values(data).returning();
+    return payment;
+  }
+
+  // Return Cases
+  async getReturnCases(filters?: { partyId?: number; status?: string }): Promise<ReturnCase[]> {
+    let query = db.select().from(returnCases);
+    const conditions: any[] = [];
+
+    if (filters?.partyId) {
+      conditions.push(eq(returnCases.partyId, filters.partyId));
+    }
+    if (filters?.status) {
+      conditions.push(eq(returnCases.status, filters.status));
+    }
+
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as any;
+    }
+
+    return query.orderBy(desc(returnCases.createdAt));
+  }
+
+  async getReturnCase(id: number): Promise<ReturnCase | undefined> {
+    const [returnCase] = await db.select().from(returnCases).where(eq(returnCases.id, id));
+    return returnCase;
+  }
+
+  async createReturnCase(data: InsertReturnCase): Promise<ReturnCase> {
+    const [returnCase] = await db.insert(returnCases).values(data).returning();
+    return returnCase;
+  }
+
+  async resolveReturnCase(id: number, resolution: string, userId: string): Promise<ReturnCase | undefined> {
+    const [returnCase] = await db
+      .update(returnCases)
+      .set({
+        status: 'resolved',
+        resolution,
+        resolvedAt: new Date(),
+        resolvedByUserId: userId,
+        updatedAt: new Date(),
+      })
+      .where(eq(returnCases.id, id))
+      .returning();
+    return returnCase;
   }
 }
 

@@ -408,6 +408,277 @@ export const backupJobsRelations = relations(backupJobs, ({ one }) => ({
   }),
 }));
 
+// ============================================================
+// LOCAL TRADE MODULE TABLES (التجارة المحلية)
+// ============================================================
+
+// Parties table (الملفات - التجار والعملاء)
+export const parties = pgTable("parties", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  type: varchar("type", { length: 20 }).notNull(), // 'merchant' (تاجر) | 'customer' (عميل)
+  name: varchar("name", { length: 255 }).notNull(),
+  imageUrl: varchar("image_url"),
+  phone: varchar("phone", { length: 50 }),
+  whatsapp: varchar("whatsapp", { length: 50 }),
+  shopName: varchar("shop_name", { length: 255 }),
+  addressArea: varchar("address_area", { length: 255 }),
+  addressGovernorate: varchar("address_governorate", { length: 255 }),
+  locationLat: decimal("location_lat", { precision: 10, scale: 7 }),
+  locationLng: decimal("location_lng", { precision: 10, scale: 7 }),
+  paymentTerms: varchar("payment_terms", { length: 20 }).default("cash").notNull(), // 'cash' | 'credit'
+  creditLimitMode: varchar("credit_limit_mode", { length: 20 }).default("unlimited").notNull(), // 'unlimited' | 'limited'
+  creditLimitAmountEgp: decimal("credit_limit_amount_egp", { precision: 15, scale: 2 }),
+  openingBalanceType: varchar("opening_balance_type", { length: 20 }).default("debit").notNull(), // 'debit' | 'credit'
+  openingBalanceEgp: decimal("opening_balance_egp", { precision: 15, scale: 2 }).default("0").notNull(),
+  nextCollectionDate: date("next_collection_date"),
+  nextCollectionAmountEgp: decimal("next_collection_amount_egp", { precision: 15, scale: 2 }),
+  nextCollectionNote: text("next_collection_note"),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Party Seasons table (مواسم الملفات)
+export const partySeasons = pgTable("party_seasons", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  partyId: integer("party_id").references(() => parties.id).notNull(),
+  seasonName: varchar("season_name", { length: 255 }),
+  startedAt: timestamp("started_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+  isCurrent: boolean("is_current").default(true).notNull(),
+  openingBalanceEgp: decimal("opening_balance_egp", { precision: 15, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Local Invoices table (الفواتير المحلية)
+export const localInvoices = pgTable("local_invoices", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  partyId: integer("party_id").references(() => parties.id).notNull(),
+  seasonId: integer("season_id").references(() => partySeasons.id),
+  invoiceKind: varchar("invoice_kind", { length: 20 }).notNull(), // 'purchase' | 'sale' | 'settlement' | 'return'
+  status: varchar("status", { length: 20 }).default("draft").notNull(), // 'draft' | 'posted' | 'received' | 'archived'
+  invoiceDate: date("invoice_date").notNull(),
+  referenceName: varchar("reference_name", { length: 255 }),
+  referenceNumber: varchar("reference_number", { length: 50 }).unique().notNull(),
+  totalCartons: integer("total_cartons").default(0).notNull(),
+  totalPieces: integer("total_pieces").default(0).notNull(),
+  subtotalEgp: decimal("subtotal_egp", { precision: 15, scale: 2 }).default("0").notNull(),
+  totalEgp: decimal("total_egp", { precision: 15, scale: 2 }).default("0").notNull(),
+  notes: text("notes"),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Local Invoice Lines table (بنود الفواتير المحلية)
+export const localInvoiceLines = pgTable("local_invoice_lines", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  invoiceId: integer("invoice_id").references(() => localInvoices.id).notNull(),
+  productTypeId: integer("product_type_id").references(() => productTypes.id),
+  productName: varchar("product_name", { length: 255 }).notNull(),
+  imageUrl: varchar("image_url"),
+  cartons: integer("cartons").default(0).notNull(),
+  piecesPerCarton: integer("pieces_per_carton").default(0).notNull(),
+  totalPieces: integer("total_pieces").default(0).notNull(),
+  unitMode: varchar("unit_mode", { length: 20 }).default("piece").notNull(), // 'piece' | 'dozen'
+  unitPriceEgp: decimal("unit_price_egp", { precision: 10, scale: 2 }).default("0").notNull(),
+  totalDozens: decimal("total_dozens", { precision: 10, scale: 2 }).default("0"),
+  lineTotalEgp: decimal("line_total_egp", { precision: 15, scale: 2 }).default("0").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Local Receipts table (استلام الفواتير)
+export const localReceipts = pgTable("local_receipts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  invoiceId: integer("invoice_id").references(() => localInvoices.id).notNull(),
+  receivingStatus: varchar("receiving_status", { length: 20 }).default("pending").notNull(), // 'pending' | 'received'
+  receivedAt: timestamp("received_at"),
+  receivedByUserId: varchar("received_by_user_id").references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Party Ledger Entries table (قيود حساب الملف)
+// Sign convention: + = party owes us (for customers) / we owe party (for merchants)
+export const partyLedgerEntries = pgTable("party_ledger_entries", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  partyId: integer("party_id").references(() => parties.id).notNull(),
+  seasonId: integer("season_id").references(() => partySeasons.id),
+  entryType: varchar("entry_type", { length: 30 }).notNull(), // 'invoice' | 'payment' | 'credit_note' | 'debit_note' | 'adjustment' | 'settlement' | 'opening_balance'
+  sourceType: varchar("source_type", { length: 50 }), // 'local_invoice' | 'local_payment' | 'return_case' | etc.
+  sourceId: integer("source_id"),
+  amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }).notNull(),
+  runningBalanceEgp: decimal("running_balance_egp", { precision: 15, scale: 2 }),
+  note: text("note"),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Local Payments table (الدفعات المحلية)
+export const localPayments = pgTable("local_payments", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  partyId: integer("party_id").references(() => parties.id).notNull(),
+  seasonId: integer("season_id").references(() => partySeasons.id),
+  invoiceId: integer("invoice_id").references(() => localInvoices.id),
+  paymentDate: date("payment_date").notNull(),
+  amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }).notNull(),
+  settlementMethod: varchar("settlement_method", { length: 30 }).default("cash").notNull(), // 'cash' | 'credit_balance'
+  paymentMethod: varchar("payment_method", { length: 50 }).default("نقدي").notNull(), // نقدي, فودافون كاش, إنستاباي, تحويل بنكي, أخرى
+  receiverName: varchar("receiver_name", { length: 255 }),
+  referenceNumber: varchar("reference_number", { length: 100 }),
+  notes: text("notes"),
+  attachmentUrl: varchar("attachment_url"),
+  attachmentMimeType: varchar("attachment_mime_type", { length: 255 }),
+  attachmentSize: integer("attachment_size"),
+  attachmentOriginalName: varchar("attachment_original_name", { length: 255 }),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Return Cases table (حالات المرتجعات والهوامش)
+export const returnCases = pgTable("return_cases", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  partyId: integer("party_id").references(() => parties.id).notNull(),
+  partyTypeSnapshot: varchar("party_type_snapshot", { length: 20 }).notNull(), // 'merchant' | 'customer'
+  seasonId: integer("season_id").references(() => partySeasons.id),
+  sourceInvoiceId: integer("source_invoice_id").references(() => localInvoices.id),
+  sourceLineId: integer("source_line_id").references(() => localInvoiceLines.id),
+  status: varchar("status", { length: 30 }).default("under_inspection").notNull(), // 'under_inspection' | 'resolved'
+  resolution: varchar("resolution", { length: 30 }), // 'accepted_return' | 'exchange' | 'deduct_value' | 'damaged' | 'rejected'
+  cartons: integer("cartons").default(0),
+  pieces: integer("pieces").default(0).notNull(),
+  amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }).default("0"),
+  notes: text("notes"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedByUserId: varchar("resolved_by_user_id").references(() => users.id),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Local Trade Relations
+export const partiesRelations = relations(parties, ({ many }) => ({
+  seasons: many(partySeasons),
+  invoices: many(localInvoices),
+  payments: many(localPayments),
+  ledgerEntries: many(partyLedgerEntries),
+  returnCases: many(returnCases),
+}));
+
+export const partySeasonsRelations = relations(partySeasons, ({ one, many }) => ({
+  party: one(parties, {
+    fields: [partySeasons.partyId],
+    references: [parties.id],
+  }),
+  invoices: many(localInvoices),
+  payments: many(localPayments),
+  ledgerEntries: many(partyLedgerEntries),
+  returnCases: many(returnCases),
+}));
+
+export const localInvoicesRelations = relations(localInvoices, ({ one, many }) => ({
+  party: one(parties, {
+    fields: [localInvoices.partyId],
+    references: [parties.id],
+  }),
+  season: one(partySeasons, {
+    fields: [localInvoices.seasonId],
+    references: [partySeasons.id],
+  }),
+  createdBy: one(users, {
+    fields: [localInvoices.createdByUserId],
+    references: [users.id],
+  }),
+  lines: many(localInvoiceLines),
+  receipts: many(localReceipts),
+  payments: many(localPayments),
+  returnCases: many(returnCases),
+}));
+
+export const localInvoiceLinesRelations = relations(localInvoiceLines, ({ one }) => ({
+  invoice: one(localInvoices, {
+    fields: [localInvoiceLines.invoiceId],
+    references: [localInvoices.id],
+  }),
+  productType: one(productTypes, {
+    fields: [localInvoiceLines.productTypeId],
+    references: [productTypes.id],
+  }),
+}));
+
+export const localReceiptsRelations = relations(localReceipts, ({ one }) => ({
+  invoice: one(localInvoices, {
+    fields: [localReceipts.invoiceId],
+    references: [localInvoices.id],
+  }),
+  receivedBy: one(users, {
+    fields: [localReceipts.receivedByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const partyLedgerEntriesRelations = relations(partyLedgerEntries, ({ one }) => ({
+  party: one(parties, {
+    fields: [partyLedgerEntries.partyId],
+    references: [parties.id],
+  }),
+  season: one(partySeasons, {
+    fields: [partyLedgerEntries.seasonId],
+    references: [partySeasons.id],
+  }),
+  createdBy: one(users, {
+    fields: [partyLedgerEntries.createdByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const localPaymentsRelations = relations(localPayments, ({ one }) => ({
+  party: one(parties, {
+    fields: [localPayments.partyId],
+    references: [parties.id],
+  }),
+  season: one(partySeasons, {
+    fields: [localPayments.seasonId],
+    references: [partySeasons.id],
+  }),
+  invoice: one(localInvoices, {
+    fields: [localPayments.invoiceId],
+    references: [localInvoices.id],
+  }),
+  createdBy: one(users, {
+    fields: [localPayments.createdByUserId],
+    references: [users.id],
+  }),
+}));
+
+export const returnCasesRelations = relations(returnCases, ({ one }) => ({
+  party: one(parties, {
+    fields: [returnCases.partyId],
+    references: [parties.id],
+  }),
+  season: one(partySeasons, {
+    fields: [returnCases.seasonId],
+    references: [partySeasons.id],
+  }),
+  sourceInvoice: one(localInvoices, {
+    fields: [returnCases.sourceInvoiceId],
+    references: [localInvoices.id],
+  }),
+  sourceLine: one(localInvoiceLines, {
+    fields: [returnCases.sourceLineId],
+    references: [localInvoiceLines.id],
+  }),
+  resolvedBy: one(users, {
+    fields: [returnCases.resolvedByUserId],
+    references: [users.id],
+  }),
+  createdBy: one(users, {
+    fields: [returnCases.createdByUserId],
+    references: [users.id],
+  }),
+}));
+
 // Insert Schemas
 export const insertUserSchema = createInsertSchema(users).omit({ createdAt: true, updatedAt: true });
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ createdAt: true, updatedAt: true });
@@ -427,6 +698,16 @@ export const insertPaymentAllocationSchema = createInsertSchema(paymentAllocatio
 export const insertInventoryMovementSchema = createInsertSchema(inventoryMovements).omit({ createdAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs);
 export const insertBackupJobSchema = createInsertSchema(backupJobs).omit({ createdAt: true });
+
+// Local Trade Insert Schemas
+export const insertPartySchema = createInsertSchema(parties).omit({ createdAt: true, updatedAt: true });
+export const insertPartySeasonSchema = createInsertSchema(partySeasons).omit({ createdAt: true });
+export const insertLocalInvoiceSchema = createInsertSchema(localInvoices).omit({ createdAt: true, updatedAt: true });
+export const insertLocalInvoiceLineSchema = createInsertSchema(localInvoiceLines).omit({ createdAt: true, updatedAt: true });
+export const insertLocalReceiptSchema = createInsertSchema(localReceipts).omit({ createdAt: true });
+export const insertPartyLedgerEntrySchema = createInsertSchema(partyLedgerEntries).omit({ createdAt: true });
+export const insertLocalPaymentSchema = createInsertSchema(localPayments).omit({ createdAt: true });
+export const insertReturnCaseSchema = createInsertSchema(returnCases).omit({ createdAt: true, updatedAt: true });
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -459,3 +740,21 @@ export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertBackupJob = z.infer<typeof insertBackupJobSchema>;
 export type BackupJob = typeof backupJobs.$inferSelect;
+
+// Local Trade Types
+export type InsertParty = z.infer<typeof insertPartySchema>;
+export type Party = typeof parties.$inferSelect;
+export type InsertPartySeason = z.infer<typeof insertPartySeasonSchema>;
+export type PartySeason = typeof partySeasons.$inferSelect;
+export type InsertLocalInvoice = z.infer<typeof insertLocalInvoiceSchema>;
+export type LocalInvoice = typeof localInvoices.$inferSelect;
+export type InsertLocalInvoiceLine = z.infer<typeof insertLocalInvoiceLineSchema>;
+export type LocalInvoiceLine = typeof localInvoiceLines.$inferSelect;
+export type InsertLocalReceipt = z.infer<typeof insertLocalReceiptSchema>;
+export type LocalReceipt = typeof localReceipts.$inferSelect;
+export type InsertPartyLedgerEntry = z.infer<typeof insertPartyLedgerEntrySchema>;
+export type PartyLedgerEntry = typeof partyLedgerEntries.$inferSelect;
+export type InsertLocalPayment = z.infer<typeof insertLocalPaymentSchema>;
+export type LocalPayment = typeof localPayments.$inferSelect;
+export type InsertReturnCase = z.infer<typeof insertReturnCaseSchema>;
+export type ReturnCase = typeof returnCases.$inferSelect;
