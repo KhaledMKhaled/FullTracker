@@ -28,6 +28,12 @@ The application is built as a full-stack web application with a clear separation
 - **Reporting & Accounting**: Includes an accounting dashboard, supplier balances, movement reports, and payment method reports with CSV/Excel export capabilities.
 - **Data Persistence**: Utilizes Replit Object Storage for persistent storage of item images and payment attachments.
 - **Backup and Restore**: Admin-only feature for comprehensive system backup (database, media files) and restore functionality with progress tracking.
+- **Local Trade Module (التجارة المحلية)**: Comprehensive EGP-only module for managing local merchants (تاجر) and customers (عميل):
+  - Party management with contact info, payment terms (كاش/آجل), credit limits
+  - Purchase invoices with two-step workflow (create → receive)
+  - Ledger-based balance tracking with running totals
+  - Return cases and margin management
+  - Seasonal settlement and archiving
 
 ### UI/UX Decisions
 - Consistent Arabic RTL layout using Cairo and Tajawal fonts.
@@ -42,6 +48,12 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Added Local Trade Module (التجارة المحلية)
+  - New database schema: 8 tables (parties, party_seasons, local_invoices, local_invoice_lines, local_receipts, party_ledger_entries, local_payments, return_cases)
+  - Backend: 17+ API routes with RBAC under /api/local-trade
+  - Frontend: 5 new pages (parties, invoices, party profile, payments, returns)
+  - Features: Party management, purchase invoices with two-step workflow, ledger tracking, returns/margins, seasonal settlement
+  - Business logic: Credit limit enforcement, atomic ledger entries, zero-balance settlement validation
 - **January 2026**: Added backup file upload and restore from external storage
   - Users can now upload a previously downloaded backup ZIP file
   - The uploaded backup is stored in Object Storage and can be restored

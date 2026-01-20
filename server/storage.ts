@@ -927,6 +927,7 @@ export interface IStorage {
   // Party Ledger Entries
   getPartyLedger(partyId: number, seasonId?: number): Promise<PartyLedgerEntry[]>;
   createLedgerEntry(data: InsertPartyLedgerEntry): Promise<PartyLedgerEntry>;
+  recalculatePartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }>;
 
   // Local Payments
   getLocalPayments(filters?: { partyId?: number }): Promise<LocalPayment[]>;
@@ -3787,14 +3788,52 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice> {
-    const [invoice] = await db.insert(localInvoices).values(data).returning();
-    
-    if (lines.length > 0) {
-      const linesWithInvoiceId = lines.map(line => ({ ...line, invoiceId: invoice.id }));
-      await db.insert(localInvoiceLines).values(linesWithInvoiceId);
-    }
+    return db.transaction(async (tx) => {
+      const [invoice] = await tx.insert(localInvoices).values(data).returning();
+      
+      if (lines.length > 0) {
+        const linesWithInvoiceId = lines.map(line => ({ ...line, invoiceId: invoice.id }));
+        await tx.insert(localInvoiceLines).values(linesWithInvoiceId);
+      }
 
-    return invoice;
+      const invoiceTotal = parseAmount(data.totalEgp);
+      if (invoiceTotal !== 0) {
+        let entryType: string;
+        let amountEgp: number;
+        let description: string;
+        
+        if (data.invoiceKind === 'purchase') {
+          entryType = 'debit';
+          amountEgp = invoiceTotal;
+          description = `فاتورة شراء رقم ${invoice.referenceNumber}`;
+        } else if (data.invoiceKind === 'return') {
+          entryType = 'credit';
+          amountEgp = -invoiceTotal;
+          description = `مرتجعات رقم ${invoice.referenceNumber}`;
+        } else if (data.invoiceKind === 'sale') {
+          entryType = 'invoice';
+          amountEgp = invoiceTotal;
+          description = `فاتورة بيع رقم ${invoice.referenceNumber}`;
+        } else {
+          entryType = 'invoice';
+          amountEgp = 0;
+          description = `فاتورة رقم ${invoice.referenceNumber}`;
+        }
+
+        await tx.insert(partyLedgerEntries).values({
+          partyId: data.partyId,
+          seasonId: data.seasonId,
+          entryType,
+          sourceType: 'local_invoice',
+          sourceId: invoice.id,
+          amountEgp: amountEgp.toString(),
+          note: description,
+          createdByUserId: data.createdByUserId,
+        });
+      }
+
+      return invoice;
+    });
   }
 
   async updateLocalInvoice(id: number, data: Partial<InsertLocalInvoice>): Promise<LocalInvoice | undefined> {
@@ -3933,8 +3972,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLocalPayment(data: InsertLocalPayment): Promise<LocalPayment> {
-    const [payment] = await db.insert(localPayments).values(data).returning();
-    return payment;
+    return db.transaction(async (tx) => {
+      const [payment] = await tx.insert(localPayments).values(data).returning();
+      
+      const paymentAmount = parseAmount(data.amountEgp);
+      if (paymentAmount !== 0) {
+        const description = `سداد مبلغ ${paymentAmount.toFixed(2)} ج.م`;
+        
+        await tx.insert(partyLedgerEntries).values({
+          partyId: data.partyId,
+          seasonId: data.seasonId,
+          entryType: 'credit',
+          sourceType: 'local_payment',
+          sourceId: payment.id,
+          amountEgp: (-paymentAmount).toString(),
+          note: description,
+          createdByUserId: data.createdByUserId,
+        });
+      }
+
+      return payment;
+    });
   }
 
   // Return Cases
@@ -3967,18 +4025,65 @@ export class DatabaseStorage implements IStorage {
   }
 
   async resolveReturnCase(id: number, resolution: string, userId: string): Promise<ReturnCase | undefined> {
-    const [returnCase] = await db
-      .update(returnCases)
-      .set({
-        status: 'resolved',
-        resolution,
-        resolvedAt: new Date(),
-        resolvedByUserId: userId,
-        updatedAt: new Date(),
-      })
-      .where(eq(returnCases.id, id))
-      .returning();
-    return returnCase;
+    return db.transaction(async (tx) => {
+      const [returnCase] = await tx
+        .update(returnCases)
+        .set({
+          status: 'resolved',
+          resolution,
+          resolvedAt: new Date(),
+          resolvedByUserId: userId,
+          updatedAt: new Date(),
+        })
+        .where(eq(returnCases.id, id))
+        .returning();
+      
+      if (!returnCase) return undefined;
+
+      const marginAmount = parseAmount(returnCase.amountEgp);
+      if (marginAmount > 0) {
+        const description = `هامش مرتجع - مبلغ ${marginAmount.toFixed(2)} ج.م`;
+        
+        await tx.insert(partyLedgerEntries).values({
+          partyId: returnCase.partyId,
+          seasonId: returnCase.seasonId,
+          entryType: 'credit',
+          sourceType: 'return_case',
+          sourceId: returnCase.id,
+          amountEgp: (-marginAmount).toString(),
+          note: description,
+          createdByUserId: userId,
+        });
+      }
+
+      return returnCase;
+    });
+  }
+
+  async recalculatePartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }> {
+    const conditions = [eq(partyLedgerEntries.partyId, partyId)];
+    if (seasonId !== undefined) {
+      conditions.push(eq(partyLedgerEntries.seasonId, seasonId));
+    }
+
+    const entries = await db
+      .select()
+      .from(partyLedgerEntries)
+      .where(and(...conditions));
+    
+    const totalBalance = entries.reduce((sum, entry) => sum + parseAmount(entry.amountEgp), 0);
+    
+    let direction: 'debit' | 'credit' | 'zero' = 'zero';
+    if (totalBalance > 0) {
+      direction = 'debit';
+    } else if (totalBalance < 0) {
+      direction = 'credit';
+    }
+
+    return {
+      balanceEgp: Math.abs(totalBalance).toFixed(2),
+      direction,
+    };
   }
 }
 

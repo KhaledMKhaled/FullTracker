@@ -2638,7 +2638,7 @@ export async function registerRoutes(
       const balance = await routeStorage.getPartyBalance(partyId, currentSeason.id);
       if (parseFloat(balance.balanceEgp) !== 0) {
         return res.status(400).json({ 
-          message: "لا يمكن إنشاء فاتورة تسوية إلا عندما يكون الرصيد صفر",
+          message: "يجب أن يكون الرصيد صفراً قبل التسوية",
           currentBalance: balance.balanceEgp,
           direction: balance.direction,
         });
@@ -2662,6 +2662,18 @@ export async function registerRoutes(
         notes: "فاتورة تسوية",
         createdByUserId: userId,
       }, []);
+      
+      // Create closing ledger entry
+      await routeStorage.createLedgerEntry({
+        partyId,
+        seasonId: currentSeason.id,
+        entryType: "settlement",
+        sourceType: "local_invoice",
+        sourceId: invoice.id,
+        amountEgp: "0",
+        note: "تسوية الموسم",
+        createdByUserId: userId,
+      });
       
       // Close current season
       await routeStorage.closeSeason(currentSeason.id);
@@ -2743,18 +2755,19 @@ export async function registerRoutes(
         return res.status(400).json({ message: "الملف غير موجود" });
       }
       
-      if (party.paymentTerms === "credit" && party.creditLimitMode === "limited") {
+      if ((party.paymentTerms === "آجل" || party.paymentTerms === "credit") && party.creditLimitMode === "limited") {
         const currentSeason = await routeStorage.getCurrentSeason(party.id);
         const balance = await routeStorage.getPartyBalance(party.id, currentSeason?.id);
-        const currentBalance = parseFloat(balance.balanceEgp);
+        const signedBalance = balance.direction === 'debit' ? parseFloat(balance.balanceEgp) : -parseFloat(balance.balanceEgp);
         const invoiceTotal = parseFloat(validatedInvoice.totalEgp || "0");
         const creditLimit = parseFloat(party.creditLimitAmountEgp || "0");
         
-        // For customers (sales), check if adding this invoice would exceed credit limit
-        if (validatedInvoice.invoiceKind === "sale" && currentBalance + invoiceTotal > creditLimit) {
+        // For PURCHASE invoices (party owes us more after purchase), check credit limit
+        // Sign convention: positive = party owes us (debit), negative = we owe them (credit)
+        if (validatedInvoice.invoiceKind === "purchase" && signedBalance + invoiceTotal > creditLimit) {
           return res.status(400).json({
-            message: "الفاتورة ستتجاوز الحد الائتماني للعميل",
-            currentBalance: currentBalance.toFixed(2),
+            message: "تم تجاوز حد الائتمان",
+            currentBalance: signedBalance.toFixed(2),
             invoiceTotal: invoiceTotal.toFixed(2),
             creditLimit: creditLimit.toFixed(2),
           });
@@ -2777,23 +2790,6 @@ export async function registerRoutes(
       validatedInvoice.createdByUserId = userId;
       
       const invoice = await routeStorage.createLocalInvoice(validatedInvoice, validatedLines);
-      
-      // Create ledger entry for the invoice
-      const invoiceTotal = parseFloat(validatedInvoice.totalEgp || "0");
-      if (invoiceTotal !== 0) {
-        // For sales: positive (customer owes us), for purchases: negative (we owe merchant)
-        const amount = validatedInvoice.invoiceKind === "sale" ? invoiceTotal : -invoiceTotal;
-        await routeStorage.createLedgerEntry({
-          partyId: validatedInvoice.partyId,
-          seasonId: currentSeason?.id,
-          entryType: "invoice",
-          sourceType: "local_invoice",
-          sourceId: invoice.id,
-          amountEgp: amount.toString(),
-          note: `فاتورة ${validatedInvoice.invoiceKind === "sale" ? "بيع" : "شراء"} رقم ${invoice.referenceNumber}`,
-          createdByUserId: userId,
-        });
-      }
       
       auditLogger({
         userId,
@@ -2889,24 +2885,6 @@ export async function registerRoutes(
       data.createdByUserId = userId;
       
       const payment = await routeStorage.createLocalPayment(data);
-      
-      // Create ledger entry for the payment
-      // For payments received from customers: negative (reduces what they owe)
-      // For payments made to merchants: positive (reduces what we owe)
-      const party = await routeStorage.getParty(data.partyId);
-      const paymentAmount = parseFloat(data.amountEgp);
-      const amount = party?.type === "customer" ? -paymentAmount : paymentAmount;
-      
-      await routeStorage.createLedgerEntry({
-        partyId: data.partyId,
-        seasonId: currentSeason?.id,
-        entryType: "payment",
-        sourceType: "local_payment",
-        sourceId: payment.id,
-        amountEgp: amount.toString(),
-        note: `دفعة بتاريخ ${data.paymentDate}`,
-        createdByUserId: userId,
-      });
       
       auditLogger({
         userId,
