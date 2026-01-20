@@ -11,7 +11,8 @@
     "check": "tsc",
     "test": "NODE_ENV=test tsx --test",
     "db:push": "drizzle-kit push",
-    "seed:full-e2e": "tsx server/seeds/full-e2e.ts"
+    "seed:full-e2e": "tsx server/seeds/full-e2e.ts",
+    "seed:local-trade": "tsx scripts/seed-local-trade.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.18.0",
