@@ -937,7 +937,7 @@ export interface IStorage {
   getReturnCases(filters?: { partyId?: number; status?: string }): Promise<ReturnCase[]>;
   getReturnCase(id: number): Promise<ReturnCase | undefined>;
   createReturnCase(data: InsertReturnCase): Promise<ReturnCase>;
-  resolveReturnCase(id: number, resolution: string, userId: string): Promise<ReturnCase | undefined>;
+  resolveReturnCase(id: number, data: { resolution: string; amountEgp: number; pieces: number; cartons: number; resolutionNote: string | null }, userId: string): Promise<ReturnCase | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3788,6 +3788,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice> {
+    // Validate dozen (دستة) unit quantities as safety check
+    for (const line of lines) {
+      if (line.unitMode === 'dozen' && (line.totalPieces || 0) % 12 !== 0) {
+        throw new Error(
+          `الكمية ${line.totalPieces} لا يمكن تقسيمها على 12. يجب أن تكون الكمية بالدستة قابلة للقسمة على 12.`
+        );
+      }
+    }
+    
     return db.transaction(async (tx) => {
       const [invoice] = await tx.insert(localInvoices).values(data).returning();
       
@@ -4024,13 +4033,31 @@ export class DatabaseStorage implements IStorage {
     return returnCase;
   }
 
-  async resolveReturnCase(id: number, resolution: string, userId: string): Promise<ReturnCase | undefined> {
+  async resolveReturnCase(
+    id: number, 
+    data: { resolution: string; amountEgp: number; pieces: number; cartons: number; resolutionNote: string | null }, 
+    userId: string
+  ): Promise<ReturnCase | undefined> {
     return db.transaction(async (tx) => {
+      const [existingCase] = await tx
+        .select()
+        .from(returnCases)
+        .where(eq(returnCases.id, id));
+      
+      if (!existingCase) return undefined;
+      
+      const { resolution, amountEgp, pieces, cartons, resolutionNote } = data;
+      const quantity = pieces || existingCase.pieces || 0;
+      
       const [returnCase] = await tx
         .update(returnCases)
         .set({
           status: 'resolved',
           resolution,
+          amountEgp: amountEgp.toString(),
+          pieces: pieces || existingCase.pieces,
+          cartons: cartons || existingCase.cartons,
+          notes: resolutionNote || existingCase.notes,
           resolvedAt: new Date(),
           resolvedByUserId: userId,
           updatedAt: new Date(),
@@ -4040,19 +4067,64 @@ export class DatabaseStorage implements IStorage {
       
       if (!returnCase) return undefined;
 
-      const marginAmount = parseAmount(returnCase.amountEgp);
-      if (marginAmount > 0) {
-        const description = `هامش مرتجع - مبلغ ${marginAmount.toFixed(2)} ج.م`;
-        
-        await tx.insert(partyLedgerEntries).values({
-          partyId: returnCase.partyId,
-          seasonId: returnCase.seasonId,
-          entryType: 'credit',
-          sourceType: 'return_case',
-          sourceId: returnCase.id,
-          amountEgp: (-marginAmount).toString(),
-          note: description,
-          createdByUserId: userId,
+      const partyType = existingCase.partyTypeSnapshot;
+      let ledgerAmount = 0;
+      let ledgerNote = '';
+      let entryType: 'credit' | 'debit' | 'adjustment' = 'adjustment';
+
+      switch (resolution) {
+        case 'accepted_return':
+          if (partyType === 'customer') {
+            ledgerAmount = -amountEgp;
+            entryType = 'credit';
+          } else {
+            ledgerAmount = amountEgp;
+            entryType = 'debit';
+          }
+          ledgerNote = `مرتجع مقبول - ${quantity} قطعة`;
+          break;
+          
+        case 'exchange':
+          ledgerAmount = 0;
+          entryType = 'adjustment';
+          ledgerNote = `استبدال - ${quantity} قطعة`;
+          break;
+          
+        case 'deduct_value':
+          ledgerAmount = -amountEgp;
+          entryType = 'credit';
+          ledgerNote = `خصم قيمة - ${amountEgp.toFixed(2)} ج.م`;
+          break;
+          
+        case 'damaged':
+          ledgerAmount = 0;
+          entryType = 'adjustment';
+          ledgerNote = `شطب تالف - ${quantity} قطعة`;
+          break;
+      }
+
+      await tx.insert(partyLedgerEntries).values({
+        partyId: returnCase.partyId,
+        seasonId: returnCase.seasonId,
+        entryType,
+        sourceType: 'return_case',
+        sourceId: returnCase.id,
+        amountEgp: ledgerAmount.toString(),
+        note: ledgerNote,
+        createdByUserId: userId,
+      });
+
+      if ((resolution === 'accepted_return' || resolution === 'damaged') && quantity > 0) {
+        const today = new Date().toISOString().split('T')[0];
+        await tx.insert(inventoryMovements).values({
+          shipmentId: null,
+          shipmentItemId: null,
+          productId: null,
+          totalPiecesIn: -quantity,
+          unitCostRmb: null,
+          unitCostEgp: quantity > 0 ? (amountEgp / quantity).toFixed(4) : "0",
+          totalCostEgp: amountEgp.toString(),
+          movementDate: today,
         });
       }
 

@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Table,
   TableBody,
@@ -475,6 +476,15 @@ interface ResolveReturnCaseDialogProps {
   isLoading: boolean;
 }
 
+type ResolutionType = 'accepted_return' | 'exchange' | 'deduct_value' | 'damaged';
+
+const resolutionOptions: { value: ResolutionType; label: string; description: string }[] = [
+  { value: 'accepted_return', label: 'مرتجع مقبول', description: 'تم قبول المرتجع وسيتم تسوية القيمة' },
+  { value: 'exchange', label: 'استبدال', description: 'تم استبدال المنتج بآخر مماثل' },
+  { value: 'deduct_value', label: 'خصم القيمة', description: 'خصم قيمة المنتج من الحساب' },
+  { value: 'damaged', label: 'تالف', description: 'شطب المنتج كتالف' },
+];
+
 function ResolveReturnCaseDialog({
   open,
   onOpenChange,
@@ -482,21 +492,34 @@ function ResolveReturnCaseDialog({
   onSubmit,
   isLoading,
 }: ResolveReturnCaseDialogProps) {
-  const [marginEgp, setMarginEgp] = useState("");
+  const [resolution, setResolution] = useState<ResolutionType>('accepted_return');
+  const [amountEgp, setAmountEgp] = useState("");
+  const [pieces, setPieces] = useState("");
+  const [cartons, setCartons] = useState("");
   const [resolutionNote, setResolutionNote] = useState("");
 
+  const showAmountField = resolution === 'accepted_return' || resolution === 'deduct_value';
+
   const handleSubmit = () => {
-    if (!marginEgp || parseFloat(marginEgp) < 0) return;
+    if (showAmountField && (!amountEgp || parseFloat(amountEgp) < 0)) return;
     onSubmit({
-      marginEgp: parseFloat(marginEgp),
+      resolution,
+      amountEgp: showAmountField ? parseFloat(amountEgp) : 0,
+      pieces: pieces ? parseInt(pieces) : 0,
+      cartons: cartons ? parseInt(cartons) : 0,
       resolutionNote: resolutionNote.trim() || null,
     });
   };
 
   const resetForm = () => {
-    setMarginEgp("");
+    setResolution('accepted_return');
+    setAmountEgp("");
+    setPieces("");
+    setCartons("");
     setResolutionNote("");
   };
+
+  const isValid = !showAmountField || (amountEgp && parseFloat(amountEgp) >= 0);
 
   return (
     <Dialog
@@ -528,17 +551,61 @@ function ResolveReturnCaseDialog({
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label>قيمة الخصم (ج.م)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={marginEgp}
-                onChange={(e) => setMarginEgp(e.target.value)}
-                placeholder="أدخل قيمة الخصم المتفق عليها..."
-              />
+            <div className="space-y-3">
+              <Label>نوع التسوية</Label>
+              <RadioGroup
+                value={resolution}
+                onValueChange={(val) => setResolution(val as ResolutionType)}
+                className="space-y-2"
+              >
+                {resolutionOptions.map((option) => (
+                  <div key={option.value} className="flex items-start space-x-3 space-x-reverse">
+                    <RadioGroupItem value={option.value} id={option.value} className="mt-1" />
+                    <Label htmlFor={option.value} className="flex flex-col cursor-pointer">
+                      <span className="font-medium">{option.label}</span>
+                      <span className="text-xs text-muted-foreground">{option.description}</span>
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
             </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>عدد القطع</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={pieces}
+                  onChange={(e) => setPieces(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>عدد الكراتين</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={cartons}
+                  onChange={(e) => setCartons(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+            </div>
+
+            {showAmountField && (
+              <div className="space-y-2">
+                <Label>المبلغ (ج.م) *</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={amountEgp}
+                  onChange={(e) => setAmountEgp(e.target.value)}
+                  placeholder="أدخل قيمة المبلغ..."
+                />
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>ملاحظات التسوية</Label>
@@ -552,7 +619,7 @@ function ResolveReturnCaseDialog({
 
             <Button
               onClick={handleSubmit}
-              disabled={isLoading || !marginEgp || parseFloat(marginEgp) < 0}
+              disabled={isLoading || !isValid}
               className="w-full"
             >
               {isLoading ? "جاري الحفظ..." : "تأكيد التسوية"}

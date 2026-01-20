@@ -103,6 +103,7 @@ interface Receipt {
 
 const UNITS = [
   { value: "piece", label: "قطعة" },
+  { value: "dozen", label: "دستة" },
   { value: "carton", label: "كرتونة" },
   { value: "kilo", label: "كيلو" },
   { value: "ton", label: "طن" },
@@ -110,6 +111,21 @@ const UNITS = [
 
 function getUnitLabel(unit: string) {
   return UNITS.find((u) => u.value === unit)?.label || unit;
+}
+
+function formatDozenQuantity(quantity: number, unit: string): string {
+  if (unit === "dozen") {
+    const dozens = quantity / 12;
+    return `${dozens} دستة (${quantity} قطعة)`;
+  }
+  return `${quantity} ${getUnitLabel(unit)}`;
+}
+
+function validateDozenQuantity(quantity: number, unit: string): string | null {
+  if (unit === "dozen" && quantity % 12 !== 0) {
+    return `الكمية ${quantity} لا يمكن تقسيمها على 12. يجب أن تكون الكمية بالدستة قابلة للقسمة على 12.`;
+  }
+  return null;
 }
 
 function getStatusBadge(status: string) {
@@ -406,21 +422,33 @@ function CreateInvoiceDialog({
   const lineTotal = (line: InvoiceLine) => line.quantity * line.unitPriceEgp;
   const invoiceTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
 
+  const getLineError = (line: InvoiceLine): string | null => {
+    return validateDozenQuantity(line.quantity, line.unit);
+  };
+
+  const hasDozenValidationErrors = lines.some((l) => getLineError(l) !== null);
+
   const handleSubmit = () => {
     if (!partyId) return;
     if (lines.some((l) => !l.productTypeId || l.quantity <= 0)) return;
+    if (hasDozenValidationErrors) return;
 
     onSubmit({
       invoiceKind,
       partyId,
       invoiceDate,
       notes: notes || null,
-      lines: lines.map((l) => ({
-        productTypeId: l.productTypeId,
-        quantity: l.quantity,
-        unit: l.unit,
-        unitPriceEgp: l.unitPriceEgp,
-      })),
+      lines: lines.map((l) => {
+        const productType = productTypes?.find((pt) => pt.id === l.productTypeId);
+        return {
+          productTypeId: l.productTypeId,
+          productName: productType?.name || "منتج",
+          totalPieces: l.quantity,
+          unitMode: l.unit,
+          unitPriceEgp: l.unitPriceEgp.toString(),
+          lineTotalEgp: (l.quantity * l.unitPriceEgp).toString(),
+        };
+      }),
     });
   };
 
@@ -580,17 +608,29 @@ function CreateInvoiceDialog({
                         </Select>
                       </TableCell>
                       <TableCell>
-                        <Input
-                          type="number"
-                          min="1"
-                          value={line.quantity}
-                          onChange={(e) =>
-                            updateLine(index, {
-                              quantity: parseInt(e.target.value) || 1,
-                            })
-                          }
-                          className="w-20"
-                        />
+                        <div className="space-y-1">
+                          <Input
+                            type="number"
+                            min="1"
+                            value={line.quantity}
+                            onChange={(e) =>
+                              updateLine(index, {
+                                quantity: parseInt(e.target.value) || 1,
+                              })
+                            }
+                            className={`w-20 ${getLineError(line) ? 'border-destructive' : ''}`}
+                          />
+                          {line.unit === "dozen" && line.quantity % 12 === 0 && line.quantity > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              {line.quantity / 12} دستة ({line.quantity} قطعة)
+                            </p>
+                          )}
+                          {getLineError(line) && (
+                            <p className="text-xs text-destructive">
+                              {getLineError(line)}
+                            </p>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Select
@@ -663,7 +703,8 @@ function CreateInvoiceDialog({
               disabled={
                 isLoading ||
                 !partyId ||
-                lines.some((l) => !l.productTypeId || l.quantity <= 0)
+                lines.some((l) => !l.productTypeId || l.quantity <= 0) ||
+                hasDozenValidationErrors
               }
             >
               {isLoading ? "جاري الحفظ..." : "حفظ الفاتورة"}

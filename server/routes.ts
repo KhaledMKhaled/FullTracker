@@ -2749,6 +2749,15 @@ export async function registerRoutes(
         insertLocalInvoiceLineSchema.omit({ invoiceId: true }).parse(line)
       );
       
+      // Validate dozen (دستة) unit quantities
+      for (const line of validatedLines) {
+        if (line.unitMode === 'dozen' && (line.totalPieces || 0) % 12 !== 0) {
+          return res.status(400).json({
+            message: `الكمية ${line.totalPieces} لا يمكن تقسيمها على 12. يجب أن تكون الكمية بالدستة قابلة للقسمة على 12.`
+          });
+        }
+      }
+      
       // Check credit limit for credit parties
       const party = await routeStorage.getParty(validatedInvoice.partyId);
       if (!party) {
@@ -2981,13 +2990,31 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const userId = (req.user as any)?.id;
-      const { resolution } = req.body;
+      const { resolution, amountEgp, pieces, cartons, resolutionNote } = req.body;
       
       if (!resolution) {
         return res.status(400).json({ message: "يجب تحديد نوع الحل" });
       }
       
-      const returnCase = await routeStorage.resolveReturnCase(id, resolution, userId);
+      const validResolutions = ['accepted_return', 'exchange', 'deduct_value', 'damaged'];
+      if (!validResolutions.includes(resolution)) {
+        return res.status(400).json({ message: "نوع الحل غير صحيح" });
+      }
+      
+      if ((resolution === 'accepted_return' || resolution === 'deduct_value') && 
+          (amountEgp === undefined || amountEgp === null || amountEgp < 0)) {
+        return res.status(400).json({ message: "يجب تحديد قيمة المبلغ" });
+      }
+      
+      const resolveData = {
+        resolution,
+        amountEgp: amountEgp ?? 0,
+        pieces: pieces ?? 0,
+        cartons: cartons ?? 0,
+        resolutionNote: resolutionNote || null,
+      };
+      
+      const returnCase = await routeStorage.resolveReturnCase(id, resolveData, userId);
       if (!returnCase) {
         return res.status(404).json({ message: "حالة المرتجع غير موجودة" });
       }
@@ -2997,7 +3024,7 @@ export async function registerRoutes(
         entityType: "RETURN_CASE",
         entityId: String(id),
         actionType: "UPDATE",
-        details: { action: "RESOLVE", resolution },
+        details: { action: "RESOLVE", ...resolveData },
       });
       
       res.json(returnCase);
