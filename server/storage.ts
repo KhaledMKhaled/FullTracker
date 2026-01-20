@@ -4078,7 +4078,7 @@ export class DatabaseStorage implements IStorage {
             ledgerAmount = -amountEgp;
             entryType = 'credit';
           } else {
-            ledgerAmount = amountEgp;
+            ledgerAmount = -amountEgp;
             entryType = 'debit';
           }
           ledgerNote = `مرتجع مقبول - ${quantity} قطعة`;

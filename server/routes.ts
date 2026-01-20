@@ -3002,13 +3002,15 @@ export async function registerRoutes(
       }
       
       if ((resolution === 'accepted_return' || resolution === 'deduct_value') && 
-          (amountEgp === undefined || amountEgp === null || amountEgp < 0)) {
-        return res.status(400).json({ message: "يجب تحديد قيمة المبلغ" });
+          (amountEgp === undefined || amountEgp === null || amountEgp <= 0)) {
+        return res.status(400).json({ message: "يجب تحديد قيمة المبلغ (أكبر من صفر)" });
       }
+      
+      const finalAmountEgp = (resolution === 'exchange' || resolution === 'damaged') ? 0 : (amountEgp ?? 0);
       
       const resolveData = {
         resolution,
-        amountEgp: amountEgp ?? 0,
+        amountEgp: finalAmountEgp,
         pieces: pieces ?? 0,
         cartons: cartons ?? 0,
         resolutionNote: resolutionNote || null,
