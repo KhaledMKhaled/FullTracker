@@ -108,11 +108,6 @@ export default function PartiesPage() {
         : null,
       openingBalanceType: formData.get("openingBalanceType") as string || "debit",
       openingBalanceEgp: parseFloat((formData.get("openingBalanceEgp") as string) || "0"),
-      nextCollectionDate: (formData.get("nextCollectionDate") as string) || null,
-      nextCollectionAmountEgp: formData.get("nextCollectionAmountEgp")
-        ? parseFloat(formData.get("nextCollectionAmountEgp") as string)
-        : null,
-      nextCollectionNote: (formData.get("nextCollectionNote") as string) || null,
       isActive: formData.get("isActive") === "on",
     };
 
@@ -364,42 +359,6 @@ export default function PartiesPage() {
                       data-testid="input-party-opening-balance"
                     />
                   </div>
-                </div>
-              </div>
-
-              <div className="space-y-4 p-4 border rounded-lg">
-                <h4 className="font-medium">موعد التحصيل القادم</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="nextCollectionDate">التاريخ</Label>
-                    <Input
-                      id="nextCollectionDate"
-                      name="nextCollectionDate"
-                      type="date"
-                      defaultValue={editingParty?.nextCollectionDate || ""}
-                      data-testid="input-party-collection-date"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="nextCollectionAmountEgp">المبلغ المتوقع (ج.م)</Label>
-                    <Input
-                      id="nextCollectionAmountEgp"
-                      name="nextCollectionAmountEgp"
-                      type="number"
-                      step="0.01"
-                      defaultValue={editingParty?.nextCollectionAmountEgp || ""}
-                      data-testid="input-party-collection-amount"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="nextCollectionNote">ملاحظات التحصيل</Label>
-                  <Input
-                    id="nextCollectionNote"
-                    name="nextCollectionNote"
-                    defaultValue={editingParty?.nextCollectionNote || ""}
-                    data-testid="input-party-collection-note"
-                  />
                 </div>
               </div>
 
