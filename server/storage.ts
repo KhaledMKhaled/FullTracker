@@ -917,6 +917,7 @@ export interface IStorage {
   createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice>;
   updateLocalInvoice(id: number, data: Partial<InsertLocalInvoice>): Promise<LocalInvoice | undefined>;
   generateInvoiceReferenceNumber(kind: string): Promise<string>;
+  getNextInvoiceReference(): Promise<string>;
 
   // Local Invoice Lines
   getInvoiceLines(invoiceId: number): Promise<LocalInvoiceLine[]>;
@@ -3926,6 +3927,20 @@ export class DatabaseStorage implements IStorage {
     
     const sequence = (existingInvoices.length + 1).toString().padStart(4, '0');
     return `${prefix}-${dateStr}-${sequence}`;
+  }
+
+  async getNextInvoiceReference(): Promise<string> {
+    const result = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(localInvoices);
+    
+    const counter = 10001 + (result[0]?.count || 0);
+    
+    const today = new Date();
+    const dd = String(today.getDate()).padStart(2, '0');
+    const mm = String(today.getMonth() + 1).padStart(2, '0');
+    const yyyy = today.getFullYear();
+    
+    return `${counter}-${dd}${mm}${yyyy}`;
   }
 
   // Local Invoice Lines

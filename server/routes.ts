@@ -773,6 +773,60 @@ export async function registerRoutes(
     }
   });
 
+  // Request presigned URL for invoice line image upload (Object Storage)
+  app.post("/api/upload/invoice-line-image/request-url", isAuthenticated, async (req, res) => {
+    try {
+      const { name, size, contentType } = req.body;
+      console.log("[Upload] Invoice Line Image Request URL - File:", name, "Size:", size, "Type:", contentType);
+      
+      if (!name) {
+        return res.status(400).json({ message: "اسم الملف مطلوب" });
+      }
+
+      // Validate file type
+      if (!contentType?.startsWith("image/")) {
+        return res.status(400).json({ message: "يسمح فقط بملفات الصور" });
+      }
+
+      const uploadURL = await objectStorageService.getObjectEntityUploadURL();
+      const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
+      console.log("[Upload] Invoice Line Image Generated - objectPath:", objectPath);
+
+      res.json({
+        uploadURL,
+        objectPath,
+        metadata: { name, size, contentType },
+      });
+    } catch (error) {
+      console.error("[Upload] Error generating invoice line image URL:", error);
+      res.status(500).json({ message: "خطأ في إنشاء رابط الرفع" });
+    }
+  });
+
+  // Finalize invoice line image upload - set ACL and return final path
+  app.post("/api/upload/invoice-line-image/finalize", isAuthenticated, async (req, res) => {
+    try {
+      const { objectPath } = req.body;
+      console.log("[Upload] Invoice Line Image Finalize - objectPath:", objectPath);
+      
+      if (!objectPath) {
+        return res.status(400).json({ message: "مسار الملف مطلوب" });
+      }
+
+      // Set public visibility for invoice line images
+      const normalizedPath = await objectStorageService.trySetObjectEntityAclPolicy(
+        objectPath,
+        { owner: "system", visibility: "public" }
+      );
+      console.log("[Upload] Invoice Line Image Finalized - normalizedPath:", normalizedPath);
+
+      res.json({ imageUrl: normalizedPath });
+    } catch (error) {
+      console.error("[Upload] Error finalizing invoice line image:", error);
+      res.status(500).json({ message: "خطأ في حفظ الصورة" });
+    }
+  });
+
   // Dashboard
   app.get("/api/dashboard/stats", isAuthenticated, async (req, res) => {
     try {
@@ -2715,6 +2769,16 @@ export async function registerRoutes(
   });
 
   // Local Invoices Routes
+  app.get("/api/local-trade/invoices/next-reference", isAuthenticated, async (req, res) => {
+    try {
+      const nextRef = await routeStorage.getNextInvoiceReference();
+      res.json({ referenceNumber: nextRef });
+    } catch (error) {
+      console.error("Error generating reference:", error);
+      res.status(500).json({ message: "فشل إنشاء رقم المرجع" });
+    }
+  });
+
   app.get("/api/local-trade/invoices", isAuthenticated, async (req, res) => {
     try {
       const filters: { partyId?: number; invoiceKind?: string; status?: string } = {};

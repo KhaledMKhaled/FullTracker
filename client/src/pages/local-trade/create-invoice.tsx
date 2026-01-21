@@ -40,6 +40,10 @@ interface InvoiceLineItem {
   id: string;
   imageFile?: File;
   imagePreview?: string;
+  imageUrl?: string;
+  imageObjectPath?: string;
+  isUploadingImage?: boolean;
+  imageUploadError?: string;
   productTypeId: number | null;
   productName: string;
   cartons: number;
@@ -49,15 +53,6 @@ interface InvoiceLineItem {
   totalPieces: number;
   totalDozens: number;
   lineTotal: number;
-}
-
-function generateReferenceNumber(): string {
-  const today = new Date();
-  const dd = String(today.getDate()).padStart(2, "0");
-  const mm = String(today.getMonth() + 1).padStart(2, "0");
-  const yyyy = today.getFullYear();
-  const random = Math.floor(Math.random() * 9000) + 1000;
-  return `INV-${dd}${mm}${yyyy}-${random}`;
 }
 
 let lineIdCounter = 0;
@@ -107,12 +102,21 @@ export default function CreateInvoicePage() {
   const [partyId, setPartyId] = useState<number | null>(null);
   const [invoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [referenceName, setReferenceName] = useState("");
-  const [referenceNumber] = useState(generateReferenceNumber);
   const [lines, setLines] = useState<InvoiceLineItem[]>([createEmptyLine()]);
 
   const { data: parties } = useParties({ type: "merchant" });
   const { data: productTypes } = useQuery<ProductType[]>({
     queryKey: ["/api/product-types"],
+  });
+  const { data: nextRef } = useQuery({
+    queryKey: ["/api/local-trade/invoices/next-reference"],
+    queryFn: async () => {
+      const res = await fetch("/api/local-trade/invoices/next-reference", { 
+        credentials: "include" 
+      });
+      if (!res.ok) throw new Error("Failed to get reference");
+      return res.json();
+    },
   });
 
   const createMutation = useCreateLocalInvoice();
@@ -141,19 +145,89 @@ export default function CreateInvoicePage() {
     setLines((prev) => [...prev, createEmptyLine()]);
   }, []);
 
-  const handleImageChange = useCallback(
-    (id: string, file: File | undefined) => {
+  const handleImageUpload = useCallback(
+    async (id: string, file: File | undefined) => {
       if (!file) return;
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        updateLine(id, {
-          imageFile: file,
-          imagePreview: reader.result as string,
+
+      // Show preview immediately
+      const preview = URL.createObjectURL(file);
+      updateLine(id, {
+        imageFile: file,
+        imagePreview: preview,
+        isUploadingImage: true,
+        imageUploadError: undefined,
+      });
+
+      try {
+        // Step 1: Request presigned URL
+        const requestRes = await fetch(
+          "/api/upload/invoice-line-image/request-url",
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: file.name,
+              size: file.size,
+              contentType: file.type,
+            }),
+          }
+        );
+
+        if (!requestRes.ok) {
+          throw new Error("Failed to get upload URL");
+        }
+
+        const { uploadURL, objectPath } = await requestRes.json();
+
+        // Step 2: Upload directly to Object Storage using the presigned URL
+        const uploadRes = await fetch(uploadURL, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": file.type },
         });
-      };
-      reader.readAsDataURL(file);
+
+        if (!uploadRes.ok) {
+          throw new Error("Failed to upload image to storage");
+        }
+
+        // Step 3: Finalize the upload (set ACL policy)
+        const finalizeRes = await fetch(
+          "/api/upload/invoice-line-image/finalize",
+          {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ objectPath }),
+          }
+        );
+
+        if (!finalizeRes.ok) {
+          throw new Error("Failed to finalize upload");
+        }
+
+        const { imageUrl } = await finalizeRes.json();
+        updateLine(id, {
+          imageUrl,
+          imageObjectPath: objectPath,
+          isUploadingImage: false,
+        });
+      } catch (error) {
+        console.error("Image upload error:", error);
+        updateLine(id, {
+          isUploadingImage: false,
+          imageUploadError:
+            error instanceof Error ? error.message : "فشل رفع الصورة",
+        });
+        toast({
+          title: "فشل رفع الصورة",
+          description:
+            error instanceof Error ? error.message : "حدث خطأ في رفع الصورة",
+          variant: "destructive",
+        });
+      }
     },
-    [updateLine]
+    [updateLine, toast]
   );
 
   const linesCount = lines.length;
@@ -199,6 +273,7 @@ export default function CreateInvoicePage() {
         lineTotalEgp: l.lineTotal.toString(),
         cartons: l.cartons,
         piecesPerCarton: l.piecesPerCarton,
+        imageUrl: l.imageUrl || null,
       })),
     };
 
@@ -273,7 +348,7 @@ export default function CreateInvoicePage() {
           <div>
             <Label>رقم الفاتورة</Label>
             <Input
-              value={referenceNumber}
+              value={nextRef?.referenceNumber || ""}
               disabled
               className="font-mono bg-muted"
             />
@@ -310,7 +385,7 @@ export default function CreateInvoicePage() {
             productTypes={productTypes}
             onUpdate={updateLine}
             onRemove={removeLine}
-            onImageChange={handleImageChange}
+            onImageChange={handleImageUpload}
             canDelete={lines.length > 1}
           />
         ))}
@@ -362,6 +437,11 @@ function LineItemRow({
         <HoverCard>
           <HoverCardTrigger asChild>
             <div className="relative w-16 h-16 border-2 border-dashed rounded-lg overflow-hidden cursor-pointer hover:border-primary group">
+              {line.isUploadingImage && (
+                <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-10">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                </div>
+              )}
               {line.imagePreview ? (
                 <img
                   src={line.imagePreview}
@@ -378,16 +458,28 @@ function LineItemRow({
                 accept="image/*"
                 className="absolute inset-0 opacity-0 cursor-pointer"
                 onChange={(e) => onImageChange(line.id, e.target.files?.[0])}
+                disabled={line.isUploadingImage}
               />
+              {line.imageUrl && !line.isUploadingImage && (
+                <div className="absolute top-1 right-1 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+              )}
             </div>
           </HoverCardTrigger>
           {line.imagePreview && (
             <HoverCardContent className="w-72 p-2">
-              <img
-                src={line.imagePreview}
-                className="w-full h-64 object-contain rounded"
-                alt="Product Preview"
-              />
+              <div className="space-y-2">
+                <img
+                  src={line.imagePreview}
+                  className="w-full h-64 object-contain rounded"
+                  alt="Product Preview"
+                />
+                {line.imageUrl && (
+                  <div className="text-xs text-green-600">✓ تم رفع الصورة بنجاح</div>
+                )}
+                {line.imageUploadError && (
+                  <div className="text-xs text-red-600">{line.imageUploadError}</div>
+                )}
+              </div>
             </HoverCardContent>
           )}
         </HoverCard>
