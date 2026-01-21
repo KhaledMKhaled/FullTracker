@@ -20,6 +20,7 @@ import {
   CheckCircle,
   AlertCircle,
   History,
+  FileDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +43,8 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -71,7 +74,7 @@ import {
   useUpdateCollectionStatus,
   useMarkCollectionReminder,
 } from "@/hooks/use-local-trade";
-import { getErrorMessage } from "@/lib/queryClient";
+import { getErrorMessage, queryClient } from "@/lib/queryClient";
 
 interface Party {
   id: number;
@@ -161,6 +164,7 @@ interface Collection {
   notes: string | null;
   reminderSent: boolean;
   status: string;
+  linkedPaymentId?: number | null;
 }
 
 interface TimelineItem {
@@ -460,7 +464,7 @@ export default function PartyProfilePage() {
         </TabsContent>
 
         <TabsContent value="ledger" className="mt-6">
-          <LedgerTab entries={ledgerEntries} />
+          <LedgerTab entries={ledgerEntries} partyData={partyData} currentBalance={currentBalance} />
         </TabsContent>
 
         <TabsContent value="archive" className="mt-6">
@@ -927,7 +931,15 @@ function ReturnsTab({
   );
 }
 
-function LedgerTab({ entries }: { entries: LedgerEntry[] }) {
+function LedgerTab({ 
+  entries, 
+  partyData, 
+  currentBalance 
+}: { 
+  entries: LedgerEntry[]; 
+  partyData: Party; 
+  currentBalance: number; 
+}) {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -940,26 +952,150 @@ function LedgerTab({ entries }: { entries: LedgerEntry[] }) {
     });
   }, [entries, dateFrom, dateTo]);
 
+  const getReferenceTypeArabic = (type: string | null | undefined) => {
+    if (!type) return "-";
+    const types: Record<string, string> = {
+      invoice: "فاتورة",
+      payment: "دفعة",
+      return: "مرتجع",
+      adjustment: "تسوية",
+      opening_balance: "رصيد افتتاحي",
+    };
+    return types[type] || type;
+  };
+
+  const handleExportPDF = async () => {
+    const { jsPDF } = await import("jspdf");
+    await import("jspdf-autotable");
+    
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4",
+    });
+
+    doc.setFontSize(20);
+    doc.text(`كشف حساب - ${partyData.name}`, doc.internal.pageSize.getWidth() - 15, 20, { align: "right" });
+    
+    doc.setFontSize(12);
+    let yPos = 30;
+    if (partyData.shopName) {
+      doc.text(partyData.shopName, doc.internal.pageSize.getWidth() - 15, yPos, { align: "right" });
+      yPos += 8;
+    }
+    doc.text(`الهاتف: ${partyData.phone || "-"}`, doc.internal.pageSize.getWidth() - 15, yPos, { align: "right" });
+    yPos += 8;
+    if (partyData.addressArea || partyData.addressGovernorate) {
+      doc.text(`العنوان: ${[partyData.addressArea, partyData.addressGovernorate].filter(Boolean).join("، ")}`, doc.internal.pageSize.getWidth() - 15, yPos, { align: "right" });
+      yPos += 8;
+    }
+    if (dateFrom || dateTo) {
+      const dateRangeText = `الفترة: ${dateFrom ? new Date(dateFrom).toLocaleDateString("ar-EG") : "البداية"} - ${dateTo ? new Date(dateTo).toLocaleDateString("ar-EG") : "الآن"}`;
+      doc.text(dateRangeText, doc.internal.pageSize.getWidth() - 15, yPos, { align: "right" });
+      yPos += 8;
+    }
+    doc.text(`تاريخ التصدير: ${new Date().toLocaleDateString("ar-EG")}`, doc.internal.pageSize.getWidth() - 15, yPos, { align: "right" });
+    
+    const tableData = filteredEntries.map(entry => {
+      const balance = parseFloat(entry.balanceEgp || "0");
+      const balanceText = `${formatCurrency(Math.abs(balance))} ${balance > 0 ? "(مدين)" : balance < 0 ? "(دائن)" : ""}`;
+      return [
+        balanceText,
+        parseFloat(entry.creditEgp || "0") > 0 ? formatCurrency(entry.creditEgp) : "-",
+        parseFloat(entry.debitEgp || "0") > 0 ? formatCurrency(entry.debitEgp) : "-",
+        entry.description || "-",
+        new Date(entry.entryDate).toLocaleDateString("ar-EG"),
+      ];
+    });
+    
+    (doc as any).autoTable({
+      head: [["الرصيد", "دائن", "مدين", "البيان", "التاريخ"]],
+      body: tableData,
+      startY: yPos + 10,
+      theme: "grid",
+      headStyles: {
+        fillColor: [66, 66, 66],
+        halign: "right",
+      },
+      bodyStyles: {
+        halign: "right",
+      },
+      columnStyles: {
+        0: { halign: "center" },
+        1: { halign: "center" },
+        2: { halign: "center" },
+      },
+    });
+    
+    const finalY = (doc as any).lastAutoTable.finalY || yPos + 10;
+    doc.setFontSize(14);
+    doc.text(
+      `الرصيد النهائي: ${formatCurrency(Math.abs(currentBalance))} ج.م ${currentBalance > 0 ? "(عليه)" : currentBalance < 0 ? "(له)" : ""}`,
+      doc.internal.pageSize.getWidth() - 15,
+      finalY + 15,
+      { align: "right" }
+    );
+    
+    doc.save(`كشف-حساب-${partyData.name}-${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  const handleExportCSV = () => {
+    const headers = ["التاريخ", "البيان", "مدين", "دائن", "الرصيد"];
+    const rows = filteredEntries.map(entry => {
+      const balance = parseFloat(entry.balanceEgp || "0");
+      const balanceText = `${Math.abs(balance)} ${balance > 0 ? "(مدين)" : balance < 0 ? "(دائن)" : ""}`;
+      return [
+        new Date(entry.entryDate).toLocaleDateString("ar-EG"),
+        (entry.description || "").replace(/,/g, "،"),
+        parseFloat(entry.debitEgp || "0") > 0 ? entry.debitEgp : "",
+        parseFloat(entry.creditEgp || "0") > 0 ? entry.creditEgp : "",
+        balanceText,
+      ];
+    });
+    
+    const csvContent = [headers, ...rows]
+      .map(row => row.join(","))
+      .join("\n");
+    
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `كشف-حساب-${partyData.name}-${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Label>من:</Label>
-          <Input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="w-40"
-          />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Label>من:</Label>
+            <Input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-40"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label>إلى:</Label>
+            <Input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-40"
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2">
-          <Label>إلى:</Label>
-          <Input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="w-40"
-          />
+          <Button variant="outline" size="sm" onClick={handleExportPDF}>
+            <FileDown className="w-4 h-4 ml-1" />
+            تصدير PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleExportCSV}>
+            <FileDown className="w-4 h-4 ml-1" />
+            تصدير CSV
+          </Button>
         </div>
       </div>
 
@@ -1090,7 +1226,7 @@ function CollectionsTab({
   isLoading: boolean;
   partyId: number;
   onSave: (data: Array<{ collectionOrder: number; collectionDate: string; amountEgp?: string; notes?: string }>) => void;
-  onStatusChange: (id: number, status: string) => void;
+  onStatusChange: (id: number, status: string, linkedPaymentId?: number) => void;
   onReminder: (id: number) => void;
   isSaving: boolean;
 }) {
@@ -1107,6 +1243,15 @@ function CollectionsTab({
     { collectionOrder: 4, collectionDate: "", amountEgp: "", notes: "" },
   ]);
 
+  const [collectionForPayment, setCollectionForPayment] = useState<Collection | null>(null);
+  const [isCollectionPaymentOpen, setIsCollectionPaymentOpen] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentDate, setPaymentDate] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("نقدي");
+  const [paymentNote, setPaymentNote] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { toast } = useToast();
+
   useEffect(() => {
     if (collections.length > 0 && !isEditing) {
       const newData = [1, 2, 3, 4].map(order => {
@@ -1121,6 +1266,67 @@ function CollectionsTab({
       setFormData(newData);
     }
   }, [collections, isEditing]);
+
+  useEffect(() => {
+    if (collectionForPayment) {
+      setPaymentAmount(collectionForPayment.amountEgp || "0");
+      setPaymentDate(new Date().toISOString().split('T')[0]);
+      setPaymentMethod("نقدي");
+      setPaymentNote("");
+    }
+  }, [collectionForPayment]);
+
+  const handleOpenPaymentDialog = (collection: Collection) => {
+    setCollectionForPayment(collection);
+    setIsCollectionPaymentOpen(true);
+  };
+
+  const handleCollectionPayment = async () => {
+    if (!collectionForPayment) return;
+    
+    setIsSubmitting(true);
+    try {
+      const paymentRes = await fetch("/api/local-trade/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          partyId: partyId,
+          paymentDate: paymentDate,
+          amountEgp: parseFloat(paymentAmount),
+          paymentMethod: paymentMethod,
+          notes: paymentNote || `تحصيل مجدول بتاريخ ${collectionForPayment.collectionDate}`,
+          linkedCollectionId: collectionForPayment.id,
+        }),
+      });
+      if (!paymentRes.ok) throw new Error(await paymentRes.text());
+      const payment = await paymentRes.json();
+      
+      const statusRes = await fetch(`/api/local-trade/collections/${collectionForPayment.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          status: "collected",
+          linkedPaymentId: payment.id,
+        }),
+      });
+      if (!statusRes.ok) throw new Error(await statusRes.text());
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", partyId, "collections"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", partyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/payments"] });
+      
+      toast({ title: "تم تسجيل الدفعة وربطها بالتحصيل بنجاح" });
+      setIsCollectionPaymentOpen(false);
+      setCollectionForPayment(null);
+    } catch (error) {
+      console.error("Error creating collection payment:", error);
+      toast({ title: getErrorMessage(error), variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSave = () => {
     const validData = formData.filter(d => d.collectionDate);
@@ -1281,7 +1487,8 @@ function CollectionsTab({
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => onStatusChange(existing.id, "collected")}
+                          onClick={() => handleOpenPaymentDialog(existing)}
+                          title="تسجيل دفعة وتحصيل"
                         >
                           <CheckCircle className="w-4 h-4" />
                         </Button>
@@ -1294,6 +1501,68 @@ function CollectionsTab({
           );
         })}
       </div>
+
+      <Dialog open={isCollectionPaymentOpen} onOpenChange={setIsCollectionPaymentOpen}>
+        <DialogContent className="max-w-md" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>تسجيل دفعة التحصيل</DialogTitle>
+            <DialogDescription>
+              سيتم تسجيل دفعة وربطها بموعد التحصيل
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>المبلغ (ج.م)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={paymentAmount}
+                onChange={(e) => setPaymentAmount(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>التاريخ</Label>
+              <Input
+                type="date"
+                value={paymentDate}
+                onChange={(e) => setPaymentDate(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>طريقة الدفع</Label>
+              <Select value={paymentMethod} onValueChange={setPaymentMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="نقدي">نقدي</SelectItem>
+                  <SelectItem value="تحويل بنكي">تحويل بنكي</SelectItem>
+                  <SelectItem value="إنستاباي">إنستاباي</SelectItem>
+                  <SelectItem value="فودافون كاش">فودافون كاش</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>ملاحظات</Label>
+              <Textarea
+                value={paymentNote}
+                onChange={(e) => setPaymentNote(e.target.value)}
+                placeholder={`تحصيل مجدول بتاريخ ${collectionForPayment?.collectionDate || ""}`}
+                rows={2}
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setIsCollectionPaymentOpen(false)}>
+              إلغاء
+            </Button>
+            <Button onClick={handleCollectionPayment} disabled={isSubmitting || !paymentAmount || parseFloat(paymentAmount) <= 0}>
+              {isSubmitting ? "جاري الحفظ..." : "تسجيل الدفعة"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

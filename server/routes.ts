@@ -3089,8 +3089,8 @@ export async function registerRoutes(
   app.patch("/api/local-trade/collections/:id/status", isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
-      const { status } = req.body; // 'collected' | 'postponed' | 'pending'
-      const result = await routeStorage.updateCollectionStatus(id, status);
+      const { status, linkedPaymentId } = req.body; // 'collected' | 'postponed' | 'pending'
+      const result = await routeStorage.updateCollectionStatus(id, status, linkedPaymentId);
       res.json(result);
     } catch (error) {
       console.error("Error updating collection status:", error);

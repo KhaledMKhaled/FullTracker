@@ -948,7 +948,7 @@ export interface IStorage {
     amountEgp?: string;
     notes?: string;
   }>): Promise<any[]>;
-  updateCollectionStatus(id: number, status: string): Promise<any>;
+  updateCollectionStatus(id: number, status: string, linkedPaymentId?: number): Promise<any>;
   markCollectionReminderSent(id: number): Promise<any>;
   deletePartyCollection(id: number): Promise<void>;
   getPartyTimeline(partyId: number): Promise<any[]>;
@@ -4246,11 +4246,12 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async updateCollectionStatus(id: number, status: string) {
+  async updateCollectionStatus(id: number, status: string, linkedPaymentId?: number) {
     const [result] = await db.update(partyCollections)
       .set({
         status,
         collectedAt: status === 'collected' ? new Date() : null,
+        linkedPaymentId: linkedPaymentId ?? null,
         updatedAt: new Date(),
       })
       .where(eq(partyCollections.id, id))

@@ -462,6 +462,7 @@ export const partyCollections = pgTable("party_collections", {
   reminderSentAt: timestamp("reminder_sent_at"),
   status: varchar("status", { length: 20 }).default("pending").notNull(), // 'pending' | 'collected' | 'postponed'
   collectedAt: timestamp("collected_at"),
+  linkedPaymentId: integer("linked_payment_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -537,6 +538,7 @@ export const localPayments = pgTable("local_payments", {
   partyId: integer("party_id").references(() => parties.id).notNull(),
   seasonId: integer("season_id").references(() => partySeasons.id),
   invoiceId: integer("invoice_id").references(() => localInvoices.id),
+  linkedCollectionId: integer("linked_collection_id"),
   paymentDate: date("payment_date").notNull(),
   amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }).notNull(),
   settlementMethod: varchar("settlement_method", { length: 30 }).default("cash").notNull(), // 'cash' | 'credit_balance'
