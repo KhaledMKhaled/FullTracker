@@ -101,7 +101,6 @@ const localTradeItems = [
     icon: Users,
     tooltip: "إدارة التجار والعملاء",
     subItems: [
-      { title: "الكل", url: "/local-trade/parties" },
       { title: "التجار", url: "/local-trade/parties?type=merchant" },
       { title: "العملاء", url: "/local-trade/parties?type=customer" },
       { title: "مزدوج", url: "/local-trade/parties?type=both" },
@@ -232,18 +231,23 @@ export function AppSidebar() {
                   </Tooltip>
                   {item.subItems && (
                     <SidebarMenuSub>
-                      {item.subItems.map((subItem) => (
-                        <SidebarMenuSubItem key={subItem.url}>
-                          <SidebarMenuSubButton
-                            asChild
-                            isActive={location === subItem.url || window.location.search === `?type=${subItem.url.split('type=')[1]}`}
-                          >
-                            <Link href={subItem.url}>
-                              <span>{subItem.title}</span>
-                            </Link>
-                          </SidebarMenuSubButton>
-                        </SidebarMenuSubItem>
-                      ))}
+                      {item.subItems.map((subItem) => {
+                        const typeParam = subItem.url.split('type=')[1];
+                        const currentType = new URLSearchParams(window.location.search).get('type');
+                        const isSubActive = currentType === typeParam;
+                        return (
+                          <SidebarMenuSubItem key={subItem.url}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={isSubActive}
+                            >
+                              <Link href={subItem.url}>
+                                <span>{subItem.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        );
+                      })}
                     </SidebarMenuSub>
                   )}
                 </SidebarMenuItem>
