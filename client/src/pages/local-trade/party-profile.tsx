@@ -425,7 +425,7 @@ export default function PartyProfilePage() {
       {/* Sticky Header */}
       <div className="sticky top-0 z-10 bg-background border-b pb-4 -mx-6 px-6 pt-4 -mt-4">
         {/* Breadcrumb */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4 flex-row-reverse justify-end">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
           <Link href="/local-trade/parties" className="hover:text-foreground">
             الملفات
           </Link>
@@ -434,8 +434,8 @@ export default function PartyProfilePage() {
         </div>
 
         {/* Main Header */}
-        <div className="flex flex-col md:flex-row-reverse gap-4 items-start md:items-center justify-between">
-          <div className="flex items-center gap-4 flex-row-reverse">
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+          <div className="flex items-center gap-4">
             <Avatar className="w-16 h-16">
               <AvatarImage src={partyData.imageUrl || undefined} />
               <AvatarFallback className="text-xl bg-primary/10 text-primary">
@@ -443,7 +443,7 @@ export default function PartyProfilePage() {
               </AvatarFallback>
             </Avatar>
             <div className="text-right">
-              <div className="flex items-center gap-2 flex-row-reverse justify-end">
+              <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-bold">{partyData.name}</h1>
                 <Badge variant={partyData.type === "merchant" ? "default" : "secondary"}>
                   {partyData.type === "merchant" ? "تاجر" : "عميل"}
@@ -455,9 +455,9 @@ export default function PartyProfilePage() {
               {partyData.shopName && (
                 <p className="text-muted-foreground">{partyData.shopName}</p>
               )}
-              <div className="flex items-center gap-3 mt-1 text-sm flex-row-reverse justify-end">
+              <div className="flex items-center gap-3 mt-1 text-sm">
                 {partyData.phone && (
-                  <span className="flex items-center gap-1 flex-row-reverse">
+                  <span className="flex items-center gap-1">
                     <Phone className="w-3 h-3" />
                     <span dir="ltr">{partyData.phone}</span>
                   </span>
@@ -467,7 +467,7 @@ export default function PartyProfilePage() {
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="flex flex-wrap items-center gap-2 flex-row-reverse">
+          <div className="flex flex-wrap items-center gap-2">
             {notifications.length > 0 && (
               <div className="relative">
                 <Button size="sm" variant="outline" className="relative">
