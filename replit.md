@@ -48,6 +48,15 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Comprehensive Invoice Creation Wizard
+  - New dedicated page for creating local trade invoices (/local-trade/invoices/new)
+  - Sticky header with: merchant dropdown, auto-filled date, reference name, auto-generated reference number
+  - Quick summary cards showing: lines count, total cartons, total pieces (real-time updates)
+  - Line items with: image upload (Object Storage), product type dropdown, product name, cartons, pieces/carton
+  - Selling unit toggle (piece/dozen) with automatic calculations
+  - Auto-generated reference number format: 10001+counter-DDMMYYYY
+  - Image preview on hover with HoverCard component
+  - Backend presigned URL upload for images
 - **January 2026**: Customer 360 Page Enhancement
   - Sticky header with customer avatar, badges, and quick action buttons
   - 6 KPI cards showing: total invoices, total paid, balance, under inspection, last invoice date, last collection date
