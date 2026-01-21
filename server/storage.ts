@@ -4189,7 +4189,7 @@ export class DatabaseStorage implements IStorage {
             ledgerAmount = -amountEgp;
             entryType = 'debit';
           }
-          ledgerNote = `مرتجع مقبول - ${quantity} قطعة`;
+          ledgerNote = `هامش مقبول - ${quantity} قطعة`;
           break;
           
         case 'exchange':
@@ -4395,7 +4395,7 @@ export class DatabaseStorage implements IStorage {
         type: 'return' as const,
         date: ret.createdAt?.toISOString().split('T')[0] || '',
         id: ret.id,
-        title: 'حالة مرتجع',
+        title: 'حالة هامش',
         description: ret.notes || '',
         amount: ret.amountEgp,
         status: ret.status,

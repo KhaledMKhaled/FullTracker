@@ -111,10 +111,10 @@ const localTradeItems = [
     tooltip: "تسجيل المدفوعات والتحصيلات",
   },
   {
-    title: "المرتجعات",
+    title: "الهوامش",
     url: "/local-trade/returns",
     icon: RotateCcw,
-    tooltip: "حالات المرتجعات والهوامش",
+    tooltip: "حالات الهوامش والنواقص",
   },
 ];
 

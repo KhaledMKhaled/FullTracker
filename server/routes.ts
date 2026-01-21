@@ -3005,7 +3005,7 @@ export async function registerRoutes(
       res.json(returnCases);
     } catch (error) {
       console.error("Error fetching return cases:", error);
-      res.status(500).json({ message: "خطأ في جلب حالات المرتجعات" });
+      res.status(500).json({ message: "خطأ في جلب حالات الهوامش" });
     }
   });
 
@@ -3014,12 +3014,12 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       const returnCase = await routeStorage.getReturnCase(id);
       if (!returnCase) {
-        return res.status(404).json({ message: "حالة المرتجع غير موجودة" });
+        return res.status(404).json({ message: "حالة الهامش غير موجودة" });
       }
       res.json(returnCase);
     } catch (error) {
       console.error("Error fetching return case:", error);
-      res.status(500).json({ message: "خطأ في جلب حالة المرتجع" });
+      res.status(500).json({ message: "خطأ في جلب حالة الهامش" });
     }
   });
 
@@ -3060,7 +3060,7 @@ export async function registerRoutes(
       if (error instanceof ZodError) {
         return res.status(400).json({ message: "بيانات غير صحيحة", errors: error.errors });
       }
-      res.status(500).json({ message: "خطأ في إنشاء حالة المرتجع" });
+      res.status(500).json({ message: "خطأ في إنشاء حالة الهامش" });
     }
   });
 
@@ -3096,7 +3096,7 @@ export async function registerRoutes(
       
       const returnCase = await routeStorage.resolveReturnCase(id, resolveData, userId);
       if (!returnCase) {
-        return res.status(404).json({ message: "حالة المرتجع غير موجودة" });
+        return res.status(404).json({ message: "حالة الهامش غير موجودة" });
       }
       
       auditLogger({
@@ -3110,7 +3110,7 @@ export async function registerRoutes(
       res.json(returnCase);
     } catch (error) {
       console.error("Error resolving return case:", error);
-      res.status(500).json({ message: "خطأ في حل حالة المرتجع" });
+      res.status(500).json({ message: "خطأ في تسوية حالة الهامش" });
     }
   });
 

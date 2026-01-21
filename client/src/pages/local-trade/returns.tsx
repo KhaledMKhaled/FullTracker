@@ -131,9 +131,9 @@ export default function ReturnsPage() {
             <RotateCcw className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">حالات المرتجعات والهوامش</h1>
+            <h1 className="text-2xl font-bold">الهوامش والنواقص</h1>
             <p className="text-sm text-muted-foreground">
-              تسجيل ومتابعة حالات الفحص والمرتجعات
+              تسجيل ومتابعة حالات الفحص والنواقص
             </p>
           </div>
         </div>
@@ -188,7 +188,7 @@ export default function ReturnsPage() {
               {filteredCases.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    لا توجد حالات مرتجعات
+                    لا توجد حالات هوامش
                   </TableCell>
                 </TableRow>
               ) : (
@@ -350,7 +350,7 @@ function CreateReturnCaseDialog({
     >
       <DialogContent className="max-w-lg" dir="rtl">
         <DialogHeader>
-          <DialogTitle>حالة مرتجع جديدة</DialogTitle>
+          <DialogTitle>حالة هامش جديدة</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -450,7 +450,7 @@ function CreateReturnCaseDialog({
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="وصف المشكلة أو المرتجع..."
+              placeholder="وصف المشكلة أو الهامش..."
               rows={3}
             />
           </div>
@@ -479,7 +479,7 @@ interface ResolveReturnCaseDialogProps {
 type ResolutionType = 'accepted_return' | 'exchange' | 'deduct_value' | 'damaged';
 
 const resolutionOptions: { value: ResolutionType; label: string; description: string }[] = [
-  { value: 'accepted_return', label: 'مرتجع مقبول', description: 'تم قبول المرتجع وسيتم تسوية القيمة' },
+  { value: 'accepted_return', label: 'هامش مقبول', description: 'تم قبول الهامش وسيتم تسوية القيمة' },
   { value: 'exchange', label: 'استبدال', description: 'تم استبدال المنتج بآخر مماثل' },
   { value: 'deduct_value', label: 'خصم القيمة', description: 'خصم قيمة المنتج من الحساب' },
   { value: 'damaged', label: 'تالف', description: 'شطب المنتج كتالف' },
@@ -531,7 +531,7 @@ function ResolveReturnCaseDialog({
     >
       <DialogContent className="max-w-lg" dir="rtl">
         <DialogHeader>
-          <DialogTitle>تسوية حالة المرتجع</DialogTitle>
+          <DialogTitle>تسوية حالة الهامش</DialogTitle>
         </DialogHeader>
 
         {returnCase && (

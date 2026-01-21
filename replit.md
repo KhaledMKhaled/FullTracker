@@ -67,7 +67,7 @@ The application is built as a full-stack web application with a clear separation
 - **January 2026**: Customer 360 Page Enhancement
   - Sticky header with customer avatar, badges, and quick action buttons
   - 6 KPI cards showing: total invoices, total paid, balance, under inspection, last invoice date, last collection date
-  - 7 tabs: نظرة عامة (Overview), الفواتير (Invoices), المدفوعات (Payments), التحصيل (Collections), المرتجعات (Returns), كشف الحساب (Statement), الأرشيف (Archive)
+  - 7 tabs: نظرة عامة (Overview), الفواتير (Invoices), المدفوعات (Payments), التحصيل (Collections), الهوامش (Margins), كشف الحساب (Statement), الأرشيف (Archive)
   - Collections linked to payments: clicking "تم التحصيل" opens payment dialog with pre-filled data
   - Statement export: PDF and CSV download with Arabic RTL formatting
   - Notifications system for due/overdue collections with in-app alerts

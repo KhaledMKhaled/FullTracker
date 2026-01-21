@@ -568,7 +568,7 @@ export const notifications = pgTable("notifications", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Return Cases table (حالات المرتجعات والهوامش)
+// Return Cases table (حالات الهوامش والنواقص)
 export const returnCases = pgTable("return_cases", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   partyId: integer("party_id").references(() => parties.id).notNull(),

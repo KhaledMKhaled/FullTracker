@@ -442,7 +442,7 @@ export default function PartyProfilePage() {
           </TabsTrigger>
           <TabsTrigger value="returns" className="flex items-center gap-1">
             <RefreshCcw className="w-4 h-4" />
-            المرتجعات
+            الهوامش
           </TabsTrigger>
           <TabsTrigger value="ledger" className="flex items-center gap-1">
             <BookOpen className="w-4 h-4" />
@@ -998,7 +998,7 @@ function ReturnsTab({
               {returnCases.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                    لا توجد حالات مرتجعات
+                    لا توجد حالات هوامش
                   </TableCell>
                 </TableRow>
               ) : (
