@@ -15,6 +15,11 @@ import {
   Archive,
   Calendar,
   Search,
+  Bell,
+  Clock,
+  CheckCircle,
+  AlertCircle,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +64,11 @@ import {
   usePartySeasons,
   useCreateLocalPayment,
   useCreateSettlement,
+  usePartyCollections,
+  usePartyTimeline,
+  useUpsertPartyCollections,
+  useUpdateCollectionStatus,
+  useMarkCollectionReminder,
 } from "@/hooks/use-local-trade";
 import { getErrorMessage } from "@/lib/queryClient";
 
@@ -141,6 +151,28 @@ interface Season {
   settlementInvoiceId?: number | null;
 }
 
+interface Collection {
+  id: number;
+  partyId: number;
+  collectionOrder: number;
+  collectionDate: string;
+  amountEgp: string | null;
+  notes: string | null;
+  reminderSent: boolean;
+  status: string;
+}
+
+interface TimelineItem {
+  type: 'invoice' | 'payment' | 'return' | 'collection';
+  date: string;
+  id: number;
+  title: string;
+  description: string | null;
+  amount: string | null;
+  status: string | null;
+  referenceNumber?: string | null;
+}
+
 function formatCurrency(value: string | number | null | undefined): string {
   if (!value) return "0";
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -211,6 +243,12 @@ export default function PartyProfilePage() {
   const updateMutation = useUpdateParty();
   const createPaymentMutation = useCreateLocalPayment();
   const createSettlementMutation = useCreateSettlement();
+
+  const { data: collections, isLoading: isLoadingCollections } = usePartyCollections(partyId);
+  const { data: timeline, isLoading: isLoadingTimeline } = usePartyTimeline(partyId);
+  const upsertCollectionsMutation = useUpsertPartyCollections();
+  const updateCollectionStatusMutation = useUpdateCollectionStatus();
+  const markReminderMutation = useMarkCollectionReminder();
 
   const partyData = party as Party | undefined;
   const ledgerEntries = (profile as { ledger?: LedgerEntry[] })?.ledger || [];
@@ -385,6 +423,14 @@ export default function PartyProfilePage() {
             <Archive className="w-4 h-4" />
             الأرشيف
           </TabsTrigger>
+          <TabsTrigger value="collections" className="flex items-center gap-1">
+            <Bell className="w-4 h-4" />
+            التحصيل
+          </TabsTrigger>
+          <TabsTrigger value="timeline" className="flex items-center gap-1">
+            <History className="w-4 h-4" />
+            الحركات
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="invoices" className="mt-6">
@@ -424,6 +470,42 @@ export default function PartyProfilePage() {
           <ArchiveTab
             seasons={(seasons as Season[]) || []}
             isLoading={isLoadingSeasons}
+          />
+        </TabsContent>
+
+        <TabsContent value="collections" className="mt-6">
+          <CollectionsTab
+            collections={(collections as Collection[]) || []}
+            isLoading={isLoadingCollections}
+            partyId={partyId}
+            onSave={(data) => {
+              upsertCollectionsMutation.mutate(
+                { partyId, collections: data },
+                {
+                  onSuccess: () => toast({ title: "تم حفظ مواعيد التحصيل" }),
+                  onError: (error) => toast({ title: getErrorMessage(error), variant: "destructive" }),
+                }
+              );
+            }}
+            onStatusChange={(id, status) => {
+              updateCollectionStatusMutation.mutate({ id, status, partyId });
+            }}
+            onReminder={(id) => {
+              markReminderMutation.mutate(
+                { id, partyId },
+                {
+                  onSuccess: () => toast({ title: "تم إرسال التذكير" }),
+                }
+              );
+            }}
+            isSaving={upsertCollectionsMutation.isPending}
+          />
+        </TabsContent>
+
+        <TabsContent value="timeline" className="mt-6">
+          <TimelineTab
+            items={(timeline as TimelineItem[]) || []}
+            isLoading={isLoadingTimeline}
           />
         </TabsContent>
       </Tabs>
@@ -889,6 +971,316 @@ function ArchiveTab({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function CollectionsTab({
+  collections,
+  isLoading,
+  partyId,
+  onSave,
+  onStatusChange,
+  onReminder,
+  isSaving,
+}: {
+  collections: Collection[];
+  isLoading: boolean;
+  partyId: number;
+  onSave: (data: Array<{ collectionOrder: number; collectionDate: string; amountEgp?: string; notes?: string }>) => void;
+  onStatusChange: (id: number, status: string) => void;
+  onReminder: (id: number) => void;
+  isSaving: boolean;
+}) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState<Array<{
+    collectionOrder: number;
+    collectionDate: string;
+    amountEgp: string;
+    notes: string;
+  }>>([
+    { collectionOrder: 1, collectionDate: "", amountEgp: "", notes: "" },
+    { collectionOrder: 2, collectionDate: "", amountEgp: "", notes: "" },
+    { collectionOrder: 3, collectionDate: "", amountEgp: "", notes: "" },
+    { collectionOrder: 4, collectionDate: "", amountEgp: "", notes: "" },
+  ]);
+
+  useMemo(() => {
+    if (collections.length > 0 && !isEditing) {
+      const newData = [1, 2, 3, 4].map(order => {
+        const existing = collections.find(c => c.collectionOrder === order);
+        return {
+          collectionOrder: order,
+          collectionDate: existing?.collectionDate || "",
+          amountEgp: existing?.amountEgp || "",
+          notes: existing?.notes || "",
+        };
+      });
+      setFormData(newData);
+    }
+  }, [collections]);
+
+  const handleSave = () => {
+    const validData = formData.filter(d => d.collectionDate);
+    onSave(validData);
+    setIsEditing(false);
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "collected":
+        return <CheckCircle className="w-5 h-5 text-green-600" />;
+      case "postponed":
+        return <AlertCircle className="w-5 h-5 text-amber-500" />;
+      default:
+        return <Clock className="w-5 h-5 text-muted-foreground" />;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "collected": return "تم التحصيل";
+      case "postponed": return "مؤجل";
+      default: return "في الانتظار";
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3, 4].map(i => (
+          <Skeleton key={i} className="h-24 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-semibold">مواعيد التحصيل (4 مواعيد متتالية)</h3>
+        {!isEditing ? (
+          <Button variant="outline" onClick={() => setIsEditing(true)}>
+            <Edit className="w-4 h-4 ml-2" />
+            تعديل المواعيد
+          </Button>
+        ) : (
+          <div className="flex gap-2">
+            <Button onClick={handleSave} disabled={isSaving}>
+              {isSaving ? "جاري الحفظ..." : "حفظ"}
+            </Button>
+            <Button variant="outline" onClick={() => setIsEditing(false)}>إلغاء</Button>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-4">
+        {[1, 2, 3, 4].map(order => {
+          const existing = collections.find(c => c.collectionOrder === order);
+          const formItem = formData.find(f => f.collectionOrder === order);
+
+          if (isEditing) {
+            return (
+              <Card key={order}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">الموعد {order}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <Label>التاريخ</Label>
+                      <Input
+                        type="date"
+                        value={formItem?.collectionDate || ""}
+                        onChange={(e) => setFormData(prev => 
+                          prev.map(p => p.collectionOrder === order 
+                            ? { ...p, collectionDate: e.target.value } 
+                            : p
+                          )
+                        )}
+                      />
+                    </div>
+                    <div>
+                      <Label>المبلغ المتوقع (ج.م)</Label>
+                      <Input
+                        type="number"
+                        placeholder="0"
+                        value={formItem?.amountEgp || ""}
+                        onChange={(e) => setFormData(prev => 
+                          prev.map(p => p.collectionOrder === order 
+                            ? { ...p, amountEgp: e.target.value } 
+                            : p
+                          )
+                        )}
+                      />
+                    </div>
+                    <div>
+                      <Label>ملاحظات</Label>
+                      <Input
+                        placeholder="ملاحظات..."
+                        value={formItem?.notes || ""}
+                        onChange={(e) => setFormData(prev => 
+                          prev.map(p => p.collectionOrder === order 
+                            ? { ...p, notes: e.target.value } 
+                            : p
+                          )
+                        )}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          }
+
+          if (!existing) {
+            return (
+              <Card key={order} className="opacity-50">
+                <CardContent className="py-4 text-center text-muted-foreground">
+                  الموعد {order} - غير محدد
+                </CardContent>
+              </Card>
+            );
+          }
+
+          return (
+            <Card key={order} className={existing.status === "collected" ? "border-green-200 bg-green-50" : ""}>
+              <CardContent className="py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {getStatusIcon(existing.status)}
+                    <div>
+                      <div className="font-medium">الموعد {order}: {formatDate(existing.collectionDate)}</div>
+                      {existing.amountEgp && (
+                        <div className="text-sm text-muted-foreground">
+                          المبلغ المتوقع: {formatCurrency(existing.amountEgp)} ج.م
+                        </div>
+                      )}
+                      {existing.notes && (
+                        <div className="text-sm text-muted-foreground">{existing.notes}</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={existing.status === "collected" ? "default" : "secondary"}>
+                      {getStatusLabel(existing.status)}
+                    </Badge>
+                    {existing.status === "pending" && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onReminder(existing.id)}
+                          disabled={existing.reminderSent}
+                          title={existing.reminderSent ? "تم إرسال التذكير" : "إرسال تذكير"}
+                        >
+                          <Bell className={`w-4 h-4 ${existing.reminderSent ? "text-green-600" : ""}`} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onStatusChange(existing.id, "collected")}
+                        >
+                          <CheckCircle className="w-4 h-4" />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TimelineTab({
+  items,
+  isLoading,
+}: {
+  items: TimelineItem[];
+  isLoading: boolean;
+}) {
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case "invoice":
+        return <FileSpreadsheet className="w-5 h-5 text-blue-600" />;
+      case "payment":
+        return <CreditCard className="w-5 h-5 text-green-600" />;
+      case "return":
+        return <RefreshCcw className="w-5 h-5 text-amber-600" />;
+      case "collection":
+        return <Bell className="w-5 h-5 text-purple-600" />;
+      default:
+        return <Clock className="w-5 h-5" />;
+    }
+  };
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case "invoice": return "فاتورة";
+      case "payment": return "سداد";
+      case "return": return "مرتجع";
+      case "collection": return "تحصيل";
+      default: return type;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        {[1, 2, 3, 4, 5].map(i => (
+          <Skeleton key={i} className="h-16 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <History className="w-12 h-12 mx-auto mb-4 opacity-50" />
+        <p>لا توجد حركات مسجلة</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">سجل الحركات</h3>
+      <div className="relative">
+        <div className="absolute right-4 top-0 bottom-0 w-0.5 bg-border" />
+        <div className="space-y-4">
+          {items.map((item, index) => (
+            <div key={`${item.type}-${item.id}`} className="relative flex gap-4 pr-8">
+              <div className="absolute right-2 w-4 h-4 rounded-full bg-background border-2 border-primary" />
+              <Card className="flex-1">
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      {getTypeIcon(item.type)}
+                      <div>
+                        <div className="font-medium">{item.title}</div>
+                        {item.description && (
+                          <div className="text-sm text-muted-foreground">{item.description}</div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm text-muted-foreground">{formatDate(item.date)}</div>
+                      {item.amount && parseFloat(item.amount) > 0 && (
+                        <div className="font-mono font-medium">{formatCurrency(item.amount)} ج.م</div>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

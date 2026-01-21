@@ -1,4 +1,4 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 interface PartyFilters {
@@ -227,6 +227,101 @@ export function useCreateSettlement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
+    },
+  });
+}
+
+// Get party collections
+export function usePartyCollections(partyId: number) {
+  return useQuery({
+    queryKey: ["/api/local-trade/collections", partyId],
+    queryFn: async () => {
+      const res = await fetch(`/api/local-trade/collections?partyId=${partyId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    enabled: !!partyId,
+  });
+}
+
+// Get party timeline
+export function usePartyTimeline(partyId: number) {
+  return useQuery({
+    queryKey: ["/api/local-trade/parties", partyId, "timeline"],
+    queryFn: async () => {
+      const res = await fetch(`/api/local-trade/parties/${partyId}/timeline`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    enabled: !!partyId,
+  });
+}
+
+// Upsert party collections
+export function useUpsertPartyCollections() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { partyId: number; collections: Array<{
+      collectionOrder: number;
+      collectionDate: string;
+      amountEgp?: string;
+      notes?: string;
+    }> }) => {
+      const res = await fetch("/api/local-trade/collections", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/collections", variables.partyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", variables.partyId, "timeline"] });
+    },
+  });
+}
+
+// Update collection status
+export function useUpdateCollectionStatus() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, status, partyId }: { id: number; status: string; partyId: number }) => {
+      const res = await fetch(`/api/local-trade/collections/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/collections", variables.partyId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", variables.partyId, "timeline"] });
+    },
+  });
+}
+
+// Mark collection reminder sent
+export function useMarkCollectionReminder() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, partyId }: { id: number; partyId: number }) => {
+      const res = await fetch(`/api/local-trade/collections/${id}/reminder`, {
+        method: "PATCH",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/collections", variables.partyId] });
     },
   });
 }
