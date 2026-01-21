@@ -57,6 +57,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   useParty,
   usePartyProfile,
+  usePartyProfileSummary,
   useUpdateParty,
   useLocalInvoices,
   useLocalPayments,
@@ -212,7 +213,7 @@ export default function PartyProfilePage() {
   const params = useParams();
   const partyId = params.id ? parseInt(params.id) : 0;
   
-  const [activeTab, setActiveTab] = useState("invoices");
+  const [activeTab, setActiveTab] = useState("overview");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isSettlementDialogOpen, setIsSettlementDialogOpen] = useState(false);
@@ -225,6 +226,7 @@ export default function PartyProfilePage() {
   
   const { data: party, isLoading: isLoadingParty } = useParty(partyId);
   const { data: profile } = usePartyProfile(partyId);
+  const { data: summary } = usePartyProfileSummary(partyId);
   
   const invoiceFilters = {
     partyId,
@@ -288,121 +290,107 @@ export default function PartyProfilePage() {
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Link href="/local-trade/parties" className="hover:text-foreground">
-          الملفات
-        </Link>
-        <span>/</span>
-        <span>{partyData.name}</span>
-      </div>
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 bg-background border-b pb-4 -mx-6 px-6 pt-4 -mt-4">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+          <Link href="/local-trade/parties" className="hover:text-foreground">
+            الملفات
+          </Link>
+          <span>/</span>
+          <span>{partyData.name}</span>
+        </div>
 
-      <Card>
-        <CardContent className="p-6">
-          <div className="flex flex-col md:flex-row gap-6">
-            <Avatar className="w-24 h-24">
+        {/* Main Header */}
+        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Avatar className="w-16 h-16">
               <AvatarImage src={partyData.imageUrl || undefined} />
-              <AvatarFallback className="text-2xl bg-primary/10 text-primary">
+              <AvatarFallback className="text-xl bg-primary/10 text-primary">
                 {partyData.name.charAt(0)}
               </AvatarFallback>
             </Avatar>
-
-            <div className="flex-1 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h1 className="text-2xl font-bold">{partyData.name}</h1>
-                    <Badge variant={partyData.type === "merchant" ? "default" : "secondary"}>
-                      {getTypeLabel(partyData.type)}
-                    </Badge>
-                    {!partyData.isActive && (
-                      <Badge variant="outline" className="border-red-500 text-red-500">
-                        غير نشط
-                      </Badge>
-                    )}
-                  </div>
-                  {partyData.shopName && (
-                    <p className="text-muted-foreground flex items-center gap-1 mt-1">
-                      <Store className="w-4 h-4" />
-                      {partyData.shopName}
-                    </p>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" onClick={() => setIsEditDialogOpen(true)}>
-                    <Edit className="w-4 h-4 ml-2" />
-                    تعديل
-                  </Button>
-                </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-bold">{partyData.name}</h1>
+                <Badge variant={partyData.type === "merchant" ? "default" : "secondary"}>
+                  {partyData.type === "merchant" ? "تاجر" : "عميل"}
+                </Badge>
+                {!partyData.isActive && (
+                  <Badge variant="outline" className="border-red-500 text-red-500">موقوف</Badge>
+                )}
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+              {partyData.shopName && (
+                <p className="text-muted-foreground">{partyData.shopName}</p>
+              )}
+              <div className="flex items-center gap-3 mt-1 text-sm">
                 {partyData.phone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-muted-foreground" />
+                  <span className="flex items-center gap-1">
+                    <Phone className="w-3 h-3" />
                     <span dir="ltr">{partyData.phone}</span>
-                  </div>
-                )}
-                {partyData.whatsapp && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-green-600" />
-                    <span dir="ltr">{partyData.whatsapp}</span>
-                    <Badge variant="outline" className="text-xs">WhatsApp</Badge>
-                  </div>
-                )}
-                {(partyData.addressArea || partyData.addressGovernorate) && (
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-muted-foreground" />
-                    <span>
-                      {[partyData.addressArea, partyData.addressGovernorate].filter(Boolean).join("، ")}
-                    </span>
-                  </div>
-                )}
-                <div className="flex items-center gap-2">
-                  <CreditCard className="w-4 h-4 text-muted-foreground" />
-                  <span>{getPaymentTermsLabel(partyData.paymentTerms)}</span>
-                  {partyData.paymentTerms === "credit" && partyData.creditLimitMode === "limited" && (
-                    <span className="text-muted-foreground">
-                      (حد: {formatCurrency(partyData.creditLimitAmountEgp)} ج.م)
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-4 pt-4 border-t">
-                <div className="flex items-center gap-2">
-                  <span className="text-muted-foreground">الرصيد الحالي:</span>
-                  <span className={`text-xl font-bold ${isDebit ? "text-red-600" : isCredit ? "text-green-600" : ""}`}>
-                    {formatCurrency(Math.abs(currentBalance))} ج.م
-                    {isDebit && " (عليه)"}
-                    {isCredit && " (له)"}
                   </span>
-                </div>
+                )}
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      <div className="flex flex-wrap gap-2">
-        <Button onClick={() => setIsPaymentDialogOpen(true)}>
-          <Plus className="w-4 h-4 ml-2" />
-          سداد جديد
-        </Button>
-        <Link href={`/local-trade/invoices?partyId=${partyId}`}>
-          <Button variant="outline">
-            <FileSpreadsheet className="w-4 h-4 ml-2" />
-            فاتورة جديدة
-          </Button>
-        </Link>
-        <Button variant="outline" onClick={() => setIsSettlementDialogOpen(true)}>
-          <Archive className="w-4 h-4 ml-2" />
-          تسوية الموسم
-        </Button>
+          {/* Quick Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => setIsPaymentDialogOpen(true)}>
+              <Plus className="w-4 h-4 ml-1" />
+              تسجيل دفعة
+            </Button>
+            <Link href={`/local-trade/invoices?partyId=${partyId}`}>
+              <Button size="sm" variant="outline">
+                <FileSpreadsheet className="w-4 h-4 ml-1" />
+                فاتورة جديدة
+              </Button>
+            </Link>
+            <Button size="sm" variant="outline" onClick={() => setIsEditDialogOpen(true)}>
+              <Edit className="w-4 h-4 ml-1" />
+              تعديل
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mt-4">
+        <Card className="p-3">
+          <div className="text-xs text-muted-foreground">إجمالي الفواتير</div>
+          <div className="text-lg font-bold">{formatCurrency(summary?.kpis?.totalInvoicesEgp || 0)} ج.م</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-xs text-muted-foreground">إجمالي المدفوع</div>
+          <div className="text-lg font-bold text-green-600">{formatCurrency(summary?.kpis?.totalPaidEgp || 0)} ج.م</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-xs text-muted-foreground">المتبقي</div>
+          <div className={`text-lg font-bold ${currentBalance > 0 ? "text-red-600" : "text-green-600"}`}>
+            {formatCurrency(Math.abs(currentBalance))} ج.م
+            <span className="text-xs mr-1">({currentBalance > 0 ? "عليه" : "له"})</span>
+          </div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-xs text-muted-foreground">تحت الفحص</div>
+          <div className="text-lg font-bold text-amber-600">{formatCurrency(summary?.kpis?.underInspectionEgp || 0)} ج.م</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-xs text-muted-foreground">آخر فاتورة</div>
+          <div className="text-sm">{summary?.lastActivity?.lastInvoiceDate ? formatDate(summary.lastActivity.lastInvoiceDate) : "-"}</div>
+        </Card>
+        <Card className="p-3">
+          <div className="text-xs text-muted-foreground">آخر تحصيل</div>
+          <div className="text-sm">{summary?.lastActivity?.lastCollectionDate ? formatDate(summary.lastActivity.lastCollectionDate) : "-"}</div>
+        </Card>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="w-full flex-wrap h-auto gap-1">
+          <TabsTrigger value="overview" className="flex items-center gap-1">
+            <User className="w-4 h-4" />
+            نظرة عامة
+          </TabsTrigger>
           <TabsTrigger value="invoices" className="flex items-center gap-1">
             <FileSpreadsheet className="w-4 h-4" />
             الفواتير
@@ -432,6 +420,15 @@ export default function PartyProfilePage() {
             الحركات
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="overview" className="mt-6">
+          <OverviewTab
+            party={partyData}
+            summary={summary}
+            currentBalance={currentBalance}
+            onSettlement={() => setIsSettlementDialogOpen(true)}
+          />
+        </TabsContent>
 
         <TabsContent value="invoices" className="mt-6">
           <InvoicesTab
@@ -572,6 +569,111 @@ export default function PartyProfilePage() {
         }}
         isLoading={createSettlementMutation.isPending}
       />
+    </div>
+  );
+}
+
+function OverviewTab({
+  party,
+  summary,
+  currentBalance,
+  onSettlement,
+}: {
+  party: Party;
+  summary: any;
+  currentBalance: number;
+  onSettlement: () => void;
+}) {
+  const isDebit = currentBalance > 0;
+  const isCredit = currentBalance < 0;
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>معلومات الملف</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {party.phone && (
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-muted-foreground" />
+                <span className="text-muted-foreground">الهاتف:</span>
+                <span dir="ltr">{party.phone}</span>
+              </div>
+            )}
+            {party.whatsapp && (
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-green-600" />
+                <span className="text-muted-foreground">واتساب:</span>
+                <span dir="ltr">{party.whatsapp}</span>
+              </div>
+            )}
+            {(party.addressArea || party.addressGovernorate) && (
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-muted-foreground" />
+                <span className="text-muted-foreground">العنوان:</span>
+                <span>{[party.addressArea, party.addressGovernorate].filter(Boolean).join("، ")}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-muted-foreground" />
+              <span className="text-muted-foreground">شروط الدفع:</span>
+              <span>{party.paymentTerms === "cash" ? "كاش" : "آجل"}</span>
+              {party.paymentTerms === "credit" && party.creditLimitMode === "limited" && (
+                <span className="text-muted-foreground">
+                  (حد: {formatCurrency(party.creditLimitAmountEgp)} ج.م)
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 pt-4 border-t">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">الرصيد الحالي:</span>
+              <span className={`text-xl font-bold ${isDebit ? "text-red-600" : isCredit ? "text-green-600" : ""}`}>
+                {formatCurrency(Math.abs(currentBalance))} ج.م
+                {isDebit && " (عليه)"}
+                {isCredit && " (له)"}
+              </span>
+            </div>
+            <Button variant="outline" size="sm" onClick={onSettlement}>
+              <Archive className="w-4 h-4 ml-1" />
+              تسوية الموسم
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {summary?.recentActivity && summary.recentActivity.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>آخر الحركات</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {summary.recentActivity.slice(0, 5).map((activity: any, index: number) => (
+                <div key={index} className="flex items-center justify-between py-2 border-b last:border-0">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                      {activity.type === 'invoice' && <FileSpreadsheet className="w-4 h-4" />}
+                      {activity.type === 'payment' && <CreditCard className="w-4 h-4" />}
+                      {activity.type === 'return' && <RefreshCcw className="w-4 h-4" />}
+                    </div>
+                    <div>
+                      <p className="font-medium">{activity.title}</p>
+                      <p className="text-sm text-muted-foreground">{formatDate(activity.date)}</p>
+                    </div>
+                  </div>
+                  {activity.amount && (
+                    <span className="font-mono">{formatCurrency(activity.amount)} ج.م</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

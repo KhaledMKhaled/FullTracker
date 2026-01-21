@@ -325,3 +325,17 @@ export function useMarkCollectionReminder() {
     },
   });
 }
+
+export function usePartyProfileSummary(partyId: number) {
+  return useQuery({
+    queryKey: ["/api/local-trade/parties", partyId, "summary"],
+    queryFn: async () => {
+      const res = await fetch(`/api/local-trade/parties/${partyId}/summary`, {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+    enabled: !!partyId,
+  });
+}

@@ -952,6 +952,26 @@ export interface IStorage {
   markCollectionReminderSent(id: number): Promise<any>;
   deletePartyCollection(id: number): Promise<void>;
   getPartyTimeline(partyId: number): Promise<any[]>;
+  getPartyProfileSummary(partyId: number, seasonId?: number): Promise<{
+    party: Party;
+    seasonId: number | undefined;
+    kpis: {
+      totalInvoicesEgp: string;
+      invoicesCount: number;
+      totalPaidEgp: string;
+      paymentsCount: number;
+      remainingBalanceEgp: string;
+      creditBalanceEgp: string;
+      underInspectionEgp: string;
+      pendingReturnsCount: number;
+      upcomingCollectionsCount: number;
+    };
+    lastActivity: {
+      lastInvoiceDate: string | null;
+      lastPaymentDate: string | null;
+      lastCollectionDate: string | null;
+    };
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4319,6 +4339,102 @@ export class DatabaseStorage implements IStorage {
     ];
     
     return timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }
+
+  async getPartyProfileSummary(partyId: number, seasonId?: number) {
+    let targetSeasonId = seasonId;
+    if (!targetSeasonId) {
+      const currentSeason = await db.select()
+        .from(partySeasons)
+        .where(and(
+          eq(partySeasons.partyId, partyId),
+          eq(partySeasons.isCurrent, true)
+        ))
+        .limit(1);
+      targetSeasonId = currentSeason[0]?.id;
+    }
+
+    const party = await db.select().from(parties).where(eq(parties.id, partyId)).limit(1);
+    if (!party[0]) throw new Error("Party not found");
+
+    const invoicesResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${localInvoices.totalEgp}), 0)`,
+      count: sql<number>`COUNT(*)`,
+    }).from(localInvoices)
+      .where(and(
+        eq(localInvoices.partyId, partyId),
+        targetSeasonId ? eq(localInvoices.seasonId, targetSeasonId) : undefined,
+        sql`${localInvoices.invoiceKind} IN ('purchase', 'sale')`
+      ));
+
+    const paymentsResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${localPayments.amountEgp}), 0)`,
+      count: sql<number>`COUNT(*)`,
+    }).from(localPayments)
+      .where(and(
+        eq(localPayments.partyId, partyId),
+        targetSeasonId ? eq(localPayments.seasonId, targetSeasonId) : undefined
+      ));
+
+    const pendingReturnsResult = await db.select({
+      total: sql<string>`COALESCE(SUM(${returnCases.amountEgp}), 0)`,
+      count: sql<number>`COUNT(*)`,
+    }).from(returnCases)
+      .where(and(
+        eq(returnCases.partyId, partyId),
+        eq(returnCases.status, "pending")
+      ));
+
+    const lastInvoice = await db.select({ date: localInvoices.invoiceDate })
+      .from(localInvoices)
+      .where(eq(localInvoices.partyId, partyId))
+      .orderBy(desc(localInvoices.invoiceDate))
+      .limit(1);
+
+    const lastPayment = await db.select({ date: localPayments.paymentDate })
+      .from(localPayments)
+      .where(eq(localPayments.partyId, partyId))
+      .orderBy(desc(localPayments.paymentDate))
+      .limit(1);
+
+    const lastCollection = await db.select({ date: partyCollections.collectionDate })
+      .from(partyCollections)
+      .where(and(
+        eq(partyCollections.partyId, partyId),
+        eq(partyCollections.status, "collected")
+      ))
+      .orderBy(desc(partyCollections.collectionDate))
+      .limit(1);
+
+    const upcomingCollections = await db.select({ count: sql<number>`COUNT(*)` })
+      .from(partyCollections)
+      .where(and(
+        eq(partyCollections.partyId, partyId),
+        eq(partyCollections.status, "pending")
+      ));
+
+    const currentBalance = parseFloat(party[0].currentBalanceEgp || "0");
+
+    return {
+      party: party[0],
+      seasonId: targetSeasonId,
+      kpis: {
+        totalInvoicesEgp: invoicesResult[0]?.total || "0",
+        invoicesCount: invoicesResult[0]?.count || 0,
+        totalPaidEgp: paymentsResult[0]?.total || "0",
+        paymentsCount: paymentsResult[0]?.count || 0,
+        remainingBalanceEgp: Math.max(0, currentBalance).toString(),
+        creditBalanceEgp: Math.abs(Math.min(0, currentBalance)).toString(),
+        underInspectionEgp: pendingReturnsResult[0]?.total || "0",
+        pendingReturnsCount: pendingReturnsResult[0]?.count || 0,
+        upcomingCollectionsCount: upcomingCollections[0]?.count || 0,
+      },
+      lastActivity: {
+        lastInvoiceDate: lastInvoice[0]?.date || null,
+        lastPaymentDate: lastPayment[0]?.date || null,
+        lastCollectionDate: lastCollection[0]?.date || null,
+      },
+    };
   }
 }
 

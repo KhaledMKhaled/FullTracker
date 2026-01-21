@@ -2530,6 +2530,19 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/local-trade/parties/:id/summary", isAuthenticated, async (req, res) => {
+    const partyId = parseInt(req.params.id);
+    const seasonId = req.query.seasonId ? parseInt(req.query.seasonId as string) : undefined;
+    
+    try {
+      const summary = await routeStorage.getPartyProfileSummary(partyId, seasonId);
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching party summary:", error);
+      res.status(500).json({ message: "حدث خطأ أثناء تحميل البيانات" });
+    }
+  });
+
   app.post("/api/local-trade/parties", requireRole(["مدير", "محاسب"]), async (req, res) => {
     try {
       const userId = (req.user as any)?.id;
