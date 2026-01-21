@@ -238,12 +238,13 @@ export function AppSidebar() {
                         return (
                           <SidebarMenuSubItem key={subItem.url}>
                             <SidebarMenuSubButton
-                              asChild
                               isActive={isSubActive}
+                              onClick={() => {
+                                window.location.href = subItem.url;
+                              }}
+                              className="cursor-pointer"
                             >
-                              <Link href={subItem.url}>
-                                <span>{subItem.title}</span>
-                              </Link>
+                              <span>{subItem.title}</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
                         );

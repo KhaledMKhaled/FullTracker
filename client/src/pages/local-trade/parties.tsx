@@ -65,16 +65,33 @@ interface Party {
 export default function PartiesPage() {
   const [location] = useLocation();
   const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [showActiveOnly, setShowActiveOnly] = useState(false);
-
-  // Read type filter from URL query params on mount
-  useEffect(() => {
+  const [typeFilter, setTypeFilter] = useState<string>(() => {
+    // Initialize from URL on first render
     const params = new URLSearchParams(window.location.search);
     const typeFromUrl = params.get("type");
-    if (typeFromUrl && ["merchant", "customer", "both"].includes(typeFromUrl)) {
-      setTypeFilter(typeFromUrl);
-    }
+    return typeFromUrl && ["merchant", "customer", "both"].includes(typeFromUrl) ? typeFromUrl : "all";
+  });
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
+
+  // Read type filter from URL query params when URL changes
+  useEffect(() => {
+    const handleUrlChange = () => {
+      const params = new URLSearchParams(window.location.search);
+      const typeFromUrl = params.get("type");
+      if (typeFromUrl && ["merchant", "customer", "both"].includes(typeFromUrl)) {
+        setTypeFilter(typeFromUrl);
+      } else {
+        setTypeFilter("all");
+      }
+    };
+    
+    // Listen for popstate (back/forward) and custom events
+    window.addEventListener('popstate', handleUrlChange);
+    
+    // Check on location change (wouter navigation)
+    handleUrlChange();
+    
+    return () => window.removeEventListener('popstate', handleUrlChange);
   }, [location]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParty, setEditingParty] = useState<Party | null>(null);
