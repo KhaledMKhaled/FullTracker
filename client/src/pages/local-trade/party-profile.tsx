@@ -490,6 +490,7 @@ export default function PartyProfilePage() {
             payments={(payments as Payment[]) || []}
             isLoading={isLoadingPayments}
             onNewPayment={() => setIsPaymentDialogOpen(true)}
+            invoices={invoices as any[]}
           />
         </TabsContent>
 
@@ -847,30 +848,42 @@ function InvoicesTab({
                 <TableHead className="text-right">رقم الفاتورة</TableHead>
                 <TableHead className="text-right">التاريخ</TableHead>
                 <TableHead className="text-right">النوع</TableHead>
-                <TableHead className="text-right">عدد الأصناف</TableHead>
                 <TableHead className="text-right">الإجمالي</TableHead>
+                <TableHead className="text-right">المدفوع</TableHead>
+                <TableHead className="text-right">المتبقي</TableHead>
+                <TableHead className="text-right">حالة السداد</TableHead>
                 <TableHead className="text-right">الحالة</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {invoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     لا توجد فواتير
                   </TableCell>
                 </TableRow>
               ) : (
-                invoices.map((invoice) => (
+                invoices.map((invoice: any) => (
                   <TableRow key={invoice.id}>
-                    <TableCell className="font-mono">{invoice.invoiceNumber}</TableCell>
+                    <TableCell className="font-mono">{invoice.invoiceNumber || invoice.referenceNumber}</TableCell>
                     <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
                     <TableCell>
                       <Badge variant={invoice.invoiceKind === "purchase" ? "default" : "secondary"}>
-                        {invoice.invoiceKind === "purchase" ? "شراء" : "مرتجع"}
+                        {invoice.invoiceKind === "purchase" ? "شراء" : invoice.invoiceKind === "sale" ? "بيع" : "مرتجع"}
                       </Badge>
                     </TableCell>
-                    <TableCell>{invoice.linesCount}</TableCell>
                     <TableCell className="font-mono">{formatCurrency(invoice.totalEgp)} ج.م</TableCell>
+                    <TableCell className="font-mono text-green-600">{formatCurrency(invoice.paidAmount || '0')} ج.م</TableCell>
+                    <TableCell className="font-mono text-orange-600">{formatCurrency(invoice.remainingAmount || invoice.totalEgp)} ج.م</TableCell>
+                    <TableCell>
+                      {invoice.paymentStatus === 'paid' ? (
+                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">مسدد</Badge>
+                      ) : invoice.paymentStatus === 'partial' ? (
+                        <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">جزئي</Badge>
+                      ) : (
+                        <Badge variant="outline">غير مسدد</Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{getStatusBadge(invoice.status)}</TableCell>
                   </TableRow>
                 ))
@@ -887,11 +900,16 @@ function PaymentsTab({
   payments,
   isLoading,
   onNewPayment,
+  invoices,
 }: {
   payments: Payment[];
   isLoading: boolean;
   onNewPayment: () => void;
+  invoices?: any[];
 }) {
+  // Create a map of invoice ID to reference number for quick lookup
+  const invoiceMap = new Map((invoices || []).map((inv: any) => [inv.id, inv.referenceNumber]));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-4">
@@ -915,24 +933,34 @@ function PaymentsTab({
                 <TableHead className="text-right">التاريخ</TableHead>
                 <TableHead className="text-right">المبلغ</TableHead>
                 <TableHead className="text-right">طريقة الدفع</TableHead>
+                <TableHead className="text-right">الفاتورة المرتبطة</TableHead>
                 <TableHead className="text-right">ملاحظات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {payments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
                     لا توجد مدفوعات
                   </TableCell>
                 </TableRow>
               ) : (
-                payments.map((payment) => (
+                payments.map((payment: any) => (
                   <TableRow key={payment.id}>
                     <TableCell>{formatDate(payment.paymentDate)}</TableCell>
                     <TableCell className="font-mono">{formatCurrency(payment.amountEgp)} ج.م</TableCell>
                     <TableCell>
                       {payment.paymentMethod === "cash" ? "نقداً" : 
                        payment.paymentMethod === "bank" ? "تحويل بنكي" : payment.paymentMethod}
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {payment.invoiceId ? (
+                        <Badge variant="outline" className="text-xs">
+                          {invoiceMap.get(payment.invoiceId) || `#${payment.invoiceId}`}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{payment.notes || "-"}</TableCell>
                   </TableRow>
