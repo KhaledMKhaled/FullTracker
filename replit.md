@@ -48,6 +48,14 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Per-Line Invoice Receiving with Automatic Margin Cases
+  - Per-line quantity input: Enter actual received quantity for each line item
+  - Automatic shortage detection: System calculates difference between ordered and received
+  - Visual indicators: Checkmark (تمام) for full receipt, warning (ناقص) for shortages
+  - Automatic margin case creation: Creates "حالة هامش" for each line with shortage
+  - Inventory impact: Only received quantities affect inventory, not ordered
+  - Renamed "المرتجعات" to "الهوامش" throughout the system (sidebar, tabs, dialogs)
+  - receivedPieces field added to track actual received quantities per line
 - **January 2026**: Enhanced Invoice Receiving & Viewing
   - Redesigned receive dialog to match invoice creation format
   - Product images with hover preview for all line items
