@@ -155,7 +155,7 @@ export default function PartiesPage() {
   };
 
   const getTypeLabel = (type: string) => {
-    return type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "بيع و اشتري";
+    return type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "مزدوج";
   };
 
   const getPaymentTermsLabel = (terms: string) => {
@@ -208,7 +208,7 @@ export default function PartiesPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="both" id="type-both" />
-                    <Label htmlFor="type-both" className="cursor-pointer">بيع و اشتري منهم</Label>
+                    <Label htmlFor="type-both" className="cursor-pointer">مزدوج</Label>
                   </div>
                 </RadioGroup>
               </div>
@@ -418,7 +418,7 @@ export default function PartiesPage() {
                 <TabsTrigger value="all">الكل</TabsTrigger>
                 <TabsTrigger value="merchant">تاجر</TabsTrigger>
                 <TabsTrigger value="customer">عميل</TabsTrigger>
-                <TabsTrigger value="both">بيع و اشتري</TabsTrigger>
+                <TabsTrigger value="both">مزدوج</TabsTrigger>
               </TabsList>
             </Tabs>
             <div className="flex items-center gap-2">

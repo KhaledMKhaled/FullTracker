@@ -316,7 +316,7 @@ export default function PartyProfilePage() {
   const isDebit = currentBalance > 0;
   const isCredit = currentBalance < 0;
 
-  const getTypeLabel = (type: string) => type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "بيع و اشتري";
+  const getTypeLabel = (type: string) => type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "مزدوج";
   const getPaymentTermsLabel = (terms: string) => terms === "cash" ? "كاش" : "آجل";
 
   return (
@@ -1860,7 +1860,7 @@ function EditPartyDialog({
               </div>
               <div className="flex items-center gap-2">
                 <RadioGroupItem value="both" id="edit-both" />
-                <Label htmlFor="edit-both" className="cursor-pointer">بيع و اشتري منهم</Label>
+                <Label htmlFor="edit-both" className="cursor-pointer">مزدوج</Label>
               </div>
             </RadioGroup>
           </div>
