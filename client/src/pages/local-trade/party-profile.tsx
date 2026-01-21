@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, Link } from "wouter";
 import {
   User,
@@ -1005,7 +1005,7 @@ function CollectionsTab({
     { collectionOrder: 4, collectionDate: "", amountEgp: "", notes: "" },
   ]);
 
-  useMemo(() => {
+  useEffect(() => {
     if (collections.length > 0 && !isEditing) {
       const newData = [1, 2, 3, 4].map(order => {
         const existing = collections.find(c => c.collectionOrder === order);
@@ -1018,7 +1018,7 @@ function CollectionsTab({
       });
       setFormData(newData);
     }
-  }, [collections]);
+  }, [collections, isEditing]);
 
   const handleSave = () => {
     const validData = formData.filter(d => d.collectionDate);
