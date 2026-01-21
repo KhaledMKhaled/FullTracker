@@ -48,9 +48,16 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Enhanced Party Profile as Comprehensive Hub
+  - Party profile page is now a complete, independent interface for all party data
+  - Added "التحصيل" (Collections) tab with 4 consecutive collection date slots, reminders, status tracking
+  - Added "الحركات" (Timeline) tab showing chronological activity view of invoices, payments, returns, collections
+  - New party_collections table: partyId, collectionOrder (1-4), date, amount, notes, reminderSent, status
+  - New APIs: collections CRUD, status updates, reminder marking, timeline aggregation
+  - Removed collection info from parties list - now managed exclusively in party profile
 - **January 2026**: Added Local Trade Module (التجارة المحلية)
-  - New database schema: 8 tables (parties, party_seasons, local_invoices, local_invoice_lines, local_receipts, party_ledger_entries, local_payments, return_cases)
-  - Backend: 17+ API routes with RBAC under /api/local-trade
+  - New database schema: 9 tables (parties, party_seasons, party_collections, local_invoices, local_invoice_lines, local_receipts, party_ledger_entries, local_payments, return_cases)
+  - Backend: 23+ API routes with RBAC under /api/local-trade
   - Frontend: 5 new pages (parties, invoices, party profile, payments, returns)
   - Features: Party management, purchase invoices with two-step workflow, ledger tracking, returns/margins, seasonal settlement
   - Business logic: Credit limit enforcement, atomic ledger entries, zero-balance settlement validation
