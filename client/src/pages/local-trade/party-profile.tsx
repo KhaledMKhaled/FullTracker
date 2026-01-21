@@ -978,30 +978,30 @@ function OverviewTab({
         <CardHeader>
           <CardTitle className="text-right">معلومات الملف</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4" dir="ltr">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" dir="rtl">
             {party.phone && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" dir="ltr">
                 <Phone className="w-4 h-4 text-muted-foreground" />
                 <span className="text-muted-foreground">الهاتف:</span>
                 <span dir="ltr">{party.phone}</span>
               </div>
             )}
             {party.whatsapp && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" dir="ltr">
                 <Phone className="w-4 h-4 text-green-600" />
                 <span className="text-muted-foreground">واتساب:</span>
                 <span dir="ltr">{party.whatsapp}</span>
               </div>
             )}
             {(party.addressArea || party.addressGovernorate) && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2" dir="ltr">
                 <MapPin className="w-4 h-4 text-muted-foreground" />
                 <span className="text-muted-foreground">العنوان:</span>
                 <span>{[party.addressArea, party.addressGovernorate].filter(Boolean).join("، ")}</span>
               </div>
             )}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" dir="ltr">
               <CreditCard className="w-4 h-4 text-muted-foreground" />
               <span className="text-muted-foreground">شروط الدفع:</span>
               <span>{party.paymentTerms === "cash" ? "كاش" : "آجل"}</span>
@@ -1013,8 +1013,8 @@ function OverviewTab({
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 pt-4 border-t">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-4 pt-4 border-t" dir="rtl">
+            <div className="flex items-center gap-2" dir="ltr">
               <span className="text-muted-foreground">الرصيد الحالي:</span>
               <span className={`text-xl font-bold ${isDebit ? "text-red-600" : isCredit ? "text-green-600" : ""}`}>
                 {formatCurrency(Math.abs(currentBalance))} ج.م
