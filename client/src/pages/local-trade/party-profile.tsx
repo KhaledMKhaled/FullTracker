@@ -2076,22 +2076,15 @@ function PaymentDialog({
           {/* Invoice Selection */}
           <div className="space-y-2">
             <Label>ربط بفاتورة (اختياري)</Label>
-            <Select value={selectedInvoiceId} onValueChange={handleInvoiceChange}>
+            <Select value={selectedInvoiceId || "none"} onValueChange={(val) => handleInvoiceChange(val === "none" ? "" : val)}>
               <SelectTrigger>
                 <SelectValue placeholder="اختر فاتورة للربط" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">بدون ربط بفاتورة</SelectItem>
+                <SelectItem value="none">بدون ربط بفاتورة</SelectItem>
                 {unpaidInvoices.map((invoice: any) => (
                   <SelectItem key={invoice.id} value={invoice.id.toString()}>
-                    <div className="flex justify-between items-center gap-4 w-full">
-                      <span>{invoice.referenceNumber}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {invoice.invoiceKind === 'purchase' ? 'شراء' : 'بيع'} | 
-                        الإجمالي: {formatCurrency(invoice.totalEgp)} | 
-                        المتبقي: {formatCurrency((invoice as any).remainingAmount || invoice.totalEgp)} ج.م
-                      </span>
-                    </div>
+                    {invoice.referenceNumber} - {invoice.invoiceKind === 'purchase' ? 'شراء' : 'بيع'} | المتبقي: {formatCurrency((invoice as any).remainingAmount || invoice.totalEgp)} ج.م
                   </SelectItem>
                 ))}
               </SelectContent>
