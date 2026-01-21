@@ -497,6 +497,7 @@ export const localInvoiceLines = pgTable("local_invoice_lines", {
   cartons: integer("cartons").default(0).notNull(),
   piecesPerCarton: integer("pieces_per_carton").default(0).notNull(),
   totalPieces: integer("total_pieces").default(0).notNull(),
+  receivedPieces: integer("received_pieces"), // null = not received yet, number = actual received quantity
   unitMode: varchar("unit_mode", { length: 20 }).default("piece").notNull(), // 'piece' | 'dozen'
   unitPriceEgp: decimal("unit_price_egp", { precision: 10, scale: 2 }).default("0").notNull(),
   totalDozens: decimal("total_dozens", { precision: 10, scale: 2 }).default("0"),
