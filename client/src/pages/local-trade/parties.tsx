@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "wouter";
+import { useState, useEffect } from "react";
+import { Link, useLocation } from "wouter";
 import {
   Users,
   Plus,
@@ -63,9 +63,19 @@ interface Party {
 }
 
 export default function PartiesPage() {
+  const [location] = useLocation();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [showActiveOnly, setShowActiveOnly] = useState(false);
+
+  // Read type filter from URL query params on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const typeFromUrl = params.get("type");
+    if (typeFromUrl && ["merchant", "customer", "both"].includes(typeFromUrl)) {
+      setTypeFilter(typeFromUrl);
+    }
+  }, [location]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [formPaymentTerms, setFormPaymentTerms] = useState("cash");

@@ -25,6 +25,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
@@ -97,6 +100,12 @@ const localTradeItems = [
     url: "/local-trade/parties",
     icon: Users,
     tooltip: "إدارة التجار والعملاء",
+    subItems: [
+      { title: "الكل", url: "/local-trade/parties" },
+      { title: "التجار", url: "/local-trade/parties?type=merchant" },
+      { title: "العملاء", url: "/local-trade/parties?type=customer" },
+      { title: "مزدوج", url: "/local-trade/parties?type=both" },
+    ],
   },
 ];
 
@@ -221,6 +230,22 @@ export function AppSidebar() {
                       {item.tooltip}
                     </TooltipContent>
                   </Tooltip>
+                  {item.subItems && (
+                    <SidebarMenuSub>
+                      {item.subItems.map((subItem) => (
+                        <SidebarMenuSubItem key={subItem.url}>
+                          <SidebarMenuSubButton
+                            asChild
+                            isActive={location === subItem.url || window.location.search === `?type=${subItem.url.split('type=')[1]}`}
+                          >
+                            <Link href={subItem.url}>
+                              <span>{subItem.title}</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
+                      ))}
+                    </SidebarMenuSub>
+                  )}
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
