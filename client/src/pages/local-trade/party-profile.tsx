@@ -67,6 +67,7 @@ import {
   useReturnCases,
   usePartySeasons,
   useCreateLocalPayment,
+  useCreateLocalInvoice,
   useCreateSettlement,
   usePartyCollections,
   usePartyTimeline,
@@ -78,6 +79,22 @@ import {
   useMarkNotificationRead,
 } from "@/hooks/use-local-trade";
 import { getErrorMessage, queryClient } from "@/lib/queryClient";
+import { useQuery } from "@tanstack/react-query";
+import type { ProductType } from "@shared/schema";
+
+interface CreateInvoiceLineInput {
+  productTypeId: number | null;
+  quantity: number;
+  unit: "piece" | "dozen";
+  unitPriceEgp: number;
+}
+
+function validateDozenQuantity(quantity: number, unit: string): string | null {
+  if (unit === "dozen" && quantity % 12 !== 0) {
+    return "الكمية يجب أن تكون من مضاعفات 12 عند البيع بالدستة";
+  }
+  return null;
+}
 
 interface Party {
   id: number;
@@ -238,10 +255,18 @@ export default function PartyProfilePage() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isSettlementDialogOpen, setIsSettlementDialogOpen] = useState(false);
+  const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("all");
   const [invoiceKindFilter, setInvoiceKindFilter] = useState<string>("all");
   const [returnStatusFilter, setReturnStatusFilter] = useState<string>("all");
+  
+  const [invoiceKind, setInvoiceKind] = useState("purchase");
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
+  const [invoiceNotes, setInvoiceNotes] = useState("");
+  const [invoiceLines, setInvoiceLines] = useState<CreateInvoiceLineInput[]>([
+    { productTypeId: null, quantity: 1, unit: "piece", unitPriceEgp: 0 },
+  ]);
   
   const { toast } = useToast();
   
@@ -276,6 +301,11 @@ export default function PartyProfilePage() {
   const updateMutation = useUpdateParty();
   const createPaymentMutation = useCreateLocalPayment();
   const createSettlementMutation = useCreateSettlement();
+  const createInvoiceMutation = useCreateLocalInvoice();
+  
+  const { data: productTypes } = useQuery<ProductType[]>({
+    queryKey: ["/api/product-types"],
+  });
 
   const { data: collections, isLoading: isLoadingCollections } = usePartyCollections(partyId);
   const { data: timeline, isLoading: isLoadingTimeline } = usePartyTimeline(partyId);
@@ -318,6 +348,77 @@ export default function PartyProfilePage() {
 
   const getTypeLabel = (type: string) => type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "مزدوج";
   const getPaymentTermsLabel = (terms: string) => terms === "cash" ? "كاش" : "آجل";
+
+  const addInvoiceLine = () => {
+    setInvoiceLines([
+      ...invoiceLines,
+      { productTypeId: null, quantity: 1, unit: "piece", unitPriceEgp: 0 },
+    ]);
+  };
+
+  const removeInvoiceLine = (index: number) => {
+    if (invoiceLines.length > 1) {
+      setInvoiceLines(invoiceLines.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateInvoiceLine = (index: number, updates: Partial<CreateInvoiceLineInput>) => {
+    setInvoiceLines(invoiceLines.map((line, i) => (i === index ? { ...line, ...updates } : line)));
+  };
+
+  const lineTotal = (line: CreateInvoiceLineInput) => line.quantity * line.unitPriceEgp;
+  const invoiceTotal = invoiceLines.reduce((sum, line) => sum + lineTotal(line), 0);
+
+  const getLineError = (line: CreateInvoiceLineInput): string | null => {
+    return validateDozenQuantity(line.quantity, line.unit);
+  };
+
+  const hasDozenValidationErrors = invoiceLines.some((l) => getLineError(l) !== null);
+
+  const handleInvoiceSubmit = () => {
+    if (invoiceLines.some((l) => !l.productTypeId || l.quantity <= 0)) return;
+    if (hasDozenValidationErrors) return;
+
+    createInvoiceMutation.mutate(
+      {
+        invoiceKind,
+        partyId,
+        invoiceDate,
+        notes: invoiceNotes || null,
+        lines: invoiceLines.map((l) => {
+          const productType = productTypes?.find((pt) => pt.id === l.productTypeId);
+          return {
+            productTypeId: l.productTypeId,
+            productName: productType?.name || "منتج",
+            totalPieces: l.quantity,
+            unitMode: l.unit,
+            unitPriceEgp: l.unitPriceEgp.toString(),
+            lineTotalEgp: (l.quantity * l.unitPriceEgp).toString(),
+          };
+        }),
+      },
+      {
+        onSuccess: () => {
+          toast({ title: "تم إنشاء الفاتورة بنجاح" });
+          setIsInvoiceDialogOpen(false);
+          resetInvoiceForm();
+          queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", partyId, "profile"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", partyId, "summary"] });
+        },
+        onError: (error) => {
+          toast({ title: getErrorMessage(error), variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  const resetInvoiceForm = () => {
+    setInvoiceKind("purchase");
+    setInvoiceDate(new Date().toISOString().split("T")[0]);
+    setInvoiceNotes("");
+    setInvoiceLines([{ productTypeId: null, quantity: 1, unit: "piece", unitPriceEgp: 0 }]);
+  };
 
   return (
     <div className="p-6 space-y-6" dir="rtl">
@@ -381,12 +482,10 @@ export default function PartyProfilePage() {
               <Plus className="w-4 h-4 ml-1" />
               تسجيل دفعة
             </Button>
-            <Link href={`/local-trade/invoices?partyId=${partyId}`}>
-              <Button size="sm" variant="outline">
-                <FileSpreadsheet className="w-4 h-4 ml-1" />
-                فاتورة جديدة
-              </Button>
-            </Link>
+            <Button size="sm" variant="outline" onClick={() => setIsInvoiceDialogOpen(true)}>
+              <FileSpreadsheet className="w-4 h-4 ml-1" />
+              فاتورة جديدة
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setIsEditDialogOpen(true)}>
               <Edit className="w-4 h-4 ml-1" />
               تعديل
@@ -482,6 +581,7 @@ export default function PartyProfilePage() {
             kindFilter={invoiceKindFilter}
             setKindFilter={setInvoiceKindFilter}
             partyId={partyId}
+            onNewInvoice={() => setIsInvoiceDialogOpen(true)}
           />
         </TabsContent>
 
@@ -613,6 +713,190 @@ export default function PartyProfilePage() {
         }}
         isLoading={createSettlementMutation.isPending}
       />
+
+      {/* Invoice Creation Dialog */}
+      <Dialog
+        open={isInvoiceDialogOpen}
+        onOpenChange={(val) => {
+          if (!val) resetInvoiceForm();
+          setIsInvoiceDialogOpen(val);
+        }}
+      >
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>فاتورة جديدة - {partyData.name}</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>نوع الفاتورة</Label>
+                <RadioGroup
+                  value={invoiceKind}
+                  onValueChange={setInvoiceKind}
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center space-x-2 space-x-reverse">
+                    <RadioGroupItem value="purchase" id="purchase" />
+                    <Label htmlFor="purchase">شراء</Label>
+                  </div>
+                  <div className="flex items-center space-x-2 space-x-reverse">
+                    <RadioGroupItem value="return" id="return" />
+                    <Label htmlFor="return">مرتجع</Label>
+                  </div>
+                </RadioGroup>
+              </div>
+              <div className="space-y-2">
+                <Label>التاريخ</Label>
+                <Input
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>ملاحظات</Label>
+              <Textarea
+                value={invoiceNotes}
+                onChange={(e) => setInvoiceNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <Label className="text-lg font-bold">الأصناف</Label>
+                <Button type="button" size="sm" onClick={addInvoiceLine}>
+                  <Plus className="w-4 h-4 ml-1" />
+                  إضافة صنف
+                </Button>
+              </div>
+
+              {invoiceLines.map((line, idx) => {
+                const error = getLineError(line);
+                return (
+                  <div key={idx} className="border rounded-lg p-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                      <div className="space-y-2">
+                        <Label>نوع المنتج</Label>
+                        <Select
+                          value={line.productTypeId?.toString() || ""}
+                          onValueChange={(val) =>
+                            updateInvoiceLine(idx, { productTypeId: parseInt(val) })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="اختر المنتج" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {productTypes?.map((pt) => (
+                              <SelectItem key={pt.id} value={pt.id.toString()}>
+                                {pt.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>الكمية</Label>
+                        <Input
+                          type="number"
+                          min="1"
+                          value={line.quantity}
+                          onChange={(e) =>
+                            updateInvoiceLine(idx, {
+                              quantity: parseInt(e.target.value) || 0,
+                            })
+                          }
+                        />
+                        {error && (
+                          <p className="text-xs text-red-500">{error}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>الوحدة</Label>
+                        <Select
+                          value={line.unit}
+                          onValueChange={(val) =>
+                            updateInvoiceLine(idx, {
+                              unit: val as "piece" | "dozen",
+                            })
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="piece">قطعة</SelectItem>
+                            <SelectItem value="dozen">دستة</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>السعر</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unitPriceEgp}
+                          onChange={(e) =>
+                            updateInvoiceLine(idx, {
+                              unitPriceEgp: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-muted-foreground">
+                        إجمالي السطر: {lineTotal(line).toFixed(2)} ج.م
+                      </span>
+                      {invoiceLines.length > 1 && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => removeInvoiceLine(idx)}
+                        >
+                          حذف
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="text-xl font-bold text-left">
+                الإجمالي: {invoiceTotal.toFixed(2)} ج.م
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setIsInvoiceDialogOpen(false)}
+              >
+                إلغاء
+              </Button>
+              <Button
+                onClick={handleInvoiceSubmit}
+                disabled={
+                  createInvoiceMutation.isPending ||
+                  invoiceLines.some((l) => !l.productTypeId || l.quantity <= 0) ||
+                  hasDozenValidationErrors
+                }
+              >
+                {createInvoiceMutation.isPending ? "جاري الحفظ..." : "حفظ الفاتورة"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -787,6 +1071,7 @@ function InvoicesTab({
   kindFilter,
   setKindFilter,
   partyId,
+  onNewInvoice,
 }: {
   invoices: Invoice[];
   isLoading: boolean;
@@ -795,6 +1080,7 @@ function InvoicesTab({
   kindFilter: string;
   setKindFilter: (value: string) => void;
   partyId: number;
+  onNewInvoice: () => void;
 }) {
   return (
     <div className="space-y-4">
@@ -826,12 +1112,10 @@ function InvoicesTab({
             </SelectContent>
           </Select>
         </div>
-        <Link href={`/local-trade/invoices?partyId=${partyId}`}>
-          <Button variant="outline" size="sm">
-            <Plus className="w-4 h-4 ml-1" />
-            فاتورة جديدة
-          </Button>
-        </Link>
+        <Button variant="outline" size="sm" onClick={onNewInvoice}>
+          <Plus className="w-4 h-4 ml-1" />
+          فاتورة جديدة
+        </Button>
       </div>
 
       {isLoading ? (
