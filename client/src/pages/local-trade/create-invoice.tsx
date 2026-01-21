@@ -99,13 +99,21 @@ export default function CreateInvoicePage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
+  const [invoiceType, setInvoiceType] = useState<"purchase" | "sale">("purchase");
   const [partyId, setPartyId] = useState<number | null>(null);
   const [invoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [referenceName, setReferenceName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [lines, setLines] = useState<InvoiceLineItem[]>([createEmptyLine()]);
 
-  const { data: parties } = useParties({ type: "merchant" });
+  const partyType = invoiceType === "purchase" ? "merchant" : "customer";
+  const { data: parties } = useParties({ type: partyType });
+
+  // Reset partyId when invoice type changes
+  const handleInvoiceTypeChange = (type: "purchase" | "sale") => {
+    setInvoiceType(type);
+    setPartyId(null);
+  };
   const { data: productTypes } = useQuery<ProductType[]>({
     queryKey: ["/api/product-types"],
   });
@@ -267,7 +275,7 @@ export default function CreateInvoicePage() {
     if (!isValid || !partyId) return;
 
     const invoiceData = {
-      invoiceKind: "purchase",
+      invoiceKind: invoiceType,
       partyId,
       invoiceDate,
       referenceName: referenceName || null,
@@ -318,15 +326,31 @@ export default function CreateInvoicePage() {
       </div>
 
       <div className="sticky top-0 z-10 bg-background border-b pb-4 pt-4 -mx-6 px-6">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
-            <Label>اسم التاجر *</Label>
+            <Label>نوع الفاتورة *</Label>
+            <Select
+              value={invoiceType}
+              onValueChange={(val: "purchase" | "sale") => handleInvoiceTypeChange(val)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="purchase">شراء (إضافة للمخزن)</SelectItem>
+                <SelectItem value="sale">بيع (خصم من المخزن)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>{invoiceType === "purchase" ? "اسم التاجر" : "اسم العميل"} *</Label>
             <Select
               value={partyId?.toString() || ""}
               onValueChange={(val) => setPartyId(Number(val))}
             >
               <SelectTrigger>
-                <SelectValue placeholder="اختر التاجر" />
+                <SelectValue placeholder={invoiceType === "purchase" ? "اختر التاجر" : "اختر العميل"} />
               </SelectTrigger>
               <SelectContent>
                 {(parties as Party[] | undefined)?.map((party) => (
