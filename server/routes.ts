@@ -2924,15 +2924,16 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       const userId = (req.user as any)?.id;
+      const { lineReceipts } = req.body as { lineReceipts?: { lineId: number; receivedPieces: number }[] };
       
-      const result = await routeStorage.receiveInvoice(id, userId);
+      const result = await routeStorage.receiveInvoice(id, userId, lineReceipts);
       
       auditLogger({
         userId,
         entityType: "LOCAL_INVOICE",
         entityId: String(id),
         actionType: "UPDATE",
-        details: { action: "RECEIVE", movementsCreated: result.movementsCreated },
+        details: { action: "RECEIVE", movementsCreated: result.movementsCreated, marginsCreated: result.marginsCreated },
       });
       
       res.json(result);

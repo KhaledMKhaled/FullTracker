@@ -3973,7 +3973,11 @@ export class DatabaseStorage implements IStorage {
     return receipt;
   }
 
-  async receiveInvoice(invoiceId: number, userId: string): Promise<{ receipt: LocalReceipt; movementsCreated: number }> {
+  async receiveInvoice(
+    invoiceId: number, 
+    userId: string,
+    lineReceipts?: { lineId: number; receivedPieces: number }[]
+  ): Promise<{ receipt: LocalReceipt; movementsCreated: number; marginsCreated: number }> {
     const invoiceData = await this.getLocalInvoice(invoiceId);
     if (!invoiceData) {
       throw new Error('Invoice not found');
@@ -3991,22 +3995,67 @@ export class DatabaseStorage implements IStorage {
     });
 
     let movementsCreated = 0;
+    let marginsCreated = 0;
     const movementDate = new Date().toISOString().slice(0, 10);
 
-    for (const line of lines) {
-      if (invoice.invoiceKind === 'purchase') {
-        await this.createInventoryMovement({
-          productId: line.productTypeId,
-          totalPiecesIn: line.totalPieces,
-          unitCostEgp: line.unitPriceEgp,
-          totalCostEgp: line.lineTotalEgp,
-          movementDate,
-        });
-        movementsCreated++;
+    // Create a map of line receipts for quick lookup
+    const receiptMap = new Map<number, number>();
+    if (lineReceipts) {
+      for (const lr of lineReceipts) {
+        receiptMap.set(lr.lineId, lr.receivedPieces);
       }
     }
 
-    return { receipt, movementsCreated };
+    for (const line of lines) {
+      // Determine received quantity (default to full quantity if not specified)
+      const receivedPieces = receiptMap.has(line.id) ? receiptMap.get(line.id)! : line.totalPieces;
+      const shortage = line.totalPieces - receivedPieces;
+
+      // Update line with received quantity
+      await db.update(localInvoiceLines)
+        .set({ receivedPieces })
+        .where(eq(localInvoiceLines.id, line.id));
+
+      if (invoice.invoiceKind === 'purchase') {
+        // Create inventory movement for received quantity only
+        if (receivedPieces > 0) {
+          const unitPrice = parseFloat(line.unitPriceEgp?.toString() || '0');
+          const receivedTotal = receivedPieces * unitPrice;
+          
+          await this.createInventoryMovement({
+            productId: line.productTypeId,
+            totalPiecesIn: receivedPieces,
+            unitCostEgp: line.unitPriceEgp,
+            totalCostEgp: receivedTotal.toString(),
+            movementDate,
+          });
+          movementsCreated++;
+        }
+
+        // Create margin case for shortage
+        if (shortage > 0) {
+          const unitPrice = parseFloat(line.unitPriceEgp?.toString() || '0');
+          const shortageAmount = shortage * unitPrice;
+          
+          await this.createReturnCase({
+            partyId: invoice.partyId,
+            partyTypeSnapshot: 'merchant',
+            seasonId: invoice.seasonId,
+            sourceInvoiceId: invoiceId,
+            sourceLineId: line.id,
+            status: 'under_inspection',
+            pieces: shortage,
+            cartons: 0,
+            amountEgp: shortageAmount.toString(),
+            notes: `نواقص تلقائية: ${line.productName} - المطلوب: ${line.totalPieces} قطعة، المستلم: ${receivedPieces} قطعة`,
+            createdByUserId: userId,
+          });
+          marginsCreated++;
+        }
+      }
+    }
+
+    return { receipt, movementsCreated, marginsCreated };
   }
 
   // Party Ledger Entries
