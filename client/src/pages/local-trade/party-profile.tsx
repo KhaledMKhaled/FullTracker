@@ -978,7 +978,7 @@ function OverviewTab({
         <CardHeader>
           <CardTitle>معلومات الملف</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-4" dir="ltr">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {party.phone && (
               <div className="flex items-center gap-2">
