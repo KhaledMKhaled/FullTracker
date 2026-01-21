@@ -23,6 +23,7 @@ import {
   partyLedgerEntries,
   localPayments,
   returnCases,
+  partyCollections,
   type User,
   type UpsertUser,
   type Supplier,
@@ -938,6 +939,19 @@ export interface IStorage {
   getReturnCase(id: number): Promise<ReturnCase | undefined>;
   createReturnCase(data: InsertReturnCase): Promise<ReturnCase>;
   resolveReturnCase(id: number, data: { resolution: string; amountEgp: number; pieces: number; cartons: number; resolutionNote: string | null }, userId: string): Promise<ReturnCase | undefined>;
+  
+  // Party Collections
+  getPartyCollections(partyId: number): Promise<any[]>;
+  upsertPartyCollections(partyId: number, collections: Array<{
+    collectionOrder: number;
+    collectionDate: string;
+    amountEgp?: string;
+    notes?: string;
+  }>): Promise<any[]>;
+  updateCollectionStatus(id: number, status: string): Promise<any>;
+  markCollectionReminderSent(id: number): Promise<any>;
+  deletePartyCollection(id: number): Promise<void>;
+  getPartyTimeline(partyId: number): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4156,6 +4170,155 @@ export class DatabaseStorage implements IStorage {
       balanceEgp: Math.abs(totalBalance).toFixed(2),
       direction,
     };
+  }
+
+  // ============ Party Collections (التحصيل) ============
+  
+  async getPartyCollections(partyId: number) {
+    return await db.select()
+      .from(partyCollections)
+      .where(eq(partyCollections.partyId, partyId))
+      .orderBy(partyCollections.collectionOrder);
+  }
+
+  async upsertPartyCollections(partyId: number, collections: Array<{
+    collectionOrder: number;
+    collectionDate: string;
+    amountEgp?: string;
+    notes?: string;
+  }>) {
+    return await db.transaction(async (tx) => {
+      const results = [];
+      for (const coll of collections) {
+        const existing = await tx.select()
+          .from(partyCollections)
+          .where(and(
+            eq(partyCollections.partyId, partyId),
+            eq(partyCollections.collectionOrder, coll.collectionOrder)
+          ))
+          .limit(1);
+        
+        if (existing.length > 0) {
+          const [updated] = await tx.update(partyCollections)
+            .set({
+              collectionDate: coll.collectionDate,
+              amountEgp: coll.amountEgp,
+              notes: coll.notes,
+              updatedAt: new Date(),
+            })
+            .where(eq(partyCollections.id, existing[0].id))
+            .returning();
+          results.push(updated);
+        } else {
+          const [created] = await tx.insert(partyCollections)
+            .values({
+              partyId,
+              collectionOrder: coll.collectionOrder,
+              collectionDate: coll.collectionDate,
+              amountEgp: coll.amountEgp,
+              notes: coll.notes,
+            })
+            .returning();
+          results.push(created);
+        }
+      }
+      return results;
+    });
+  }
+
+  async updateCollectionStatus(id: number, status: string) {
+    const [result] = await db.update(partyCollections)
+      .set({
+        status,
+        collectedAt: status === 'collected' ? new Date() : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(partyCollections.id, id))
+      .returning();
+    return result;
+  }
+
+  async markCollectionReminderSent(id: number) {
+    const [result] = await db.update(partyCollections)
+      .set({
+        reminderSent: true,
+        reminderSentAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(partyCollections.id, id))
+      .returning();
+    return result;
+  }
+
+  async deletePartyCollection(id: number) {
+    await db.delete(partyCollections).where(eq(partyCollections.id, id));
+  }
+
+  async getPartyTimeline(partyId: number) {
+    const invoicesData = await db.select()
+      .from(localInvoices)
+      .where(eq(localInvoices.partyId, partyId));
+    
+    const paymentsData = await db.select()
+      .from(localPayments)
+      .where(eq(localPayments.partyId, partyId));
+    
+    const returnsData = await db.select()
+      .from(returnCases)
+      .where(eq(returnCases.partyId, partyId));
+    
+    const collectionsData = await db.select()
+      .from(partyCollections)
+      .where(eq(partyCollections.partyId, partyId));
+    
+    const ledgerData = await db.select()
+      .from(partyLedgerEntries)
+      .where(eq(partyLedgerEntries.partyId, partyId));
+    
+    const timeline = [
+      ...invoicesData.map(inv => ({
+        type: 'invoice' as const,
+        date: inv.invoiceDate,
+        id: inv.id,
+        title: inv.invoiceKind === 'purchase' ? 'فاتورة شراء' : inv.invoiceKind === 'sale' ? 'فاتورة بيع' : inv.invoiceKind === 'return' ? 'فاتورة مرتجع' : 'تسوية',
+        description: inv.referenceNumber,
+        amount: inv.totalEgp,
+        status: inv.status,
+        referenceNumber: inv.referenceNumber,
+      })),
+      ...paymentsData.map(pay => ({
+        type: 'payment' as const,
+        date: pay.paymentDate,
+        id: pay.id,
+        title: 'سداد',
+        description: pay.paymentMethod === 'cash' ? 'نقداً' : pay.paymentMethod,
+        amount: pay.amountEgp,
+        status: null,
+        referenceNumber: null,
+      })),
+      ...returnsData.map(ret => ({
+        type: 'return' as const,
+        date: ret.createdAt?.toISOString().split('T')[0] || '',
+        id: ret.id,
+        title: 'حالة مرتجع',
+        description: ret.notes || '',
+        amount: ret.amountEgp,
+        status: ret.status,
+        referenceNumber: null,
+      })),
+      ...collectionsData.map(coll => ({
+        type: 'collection' as const,
+        date: coll.collectionDate,
+        id: coll.id,
+        title: `موعد تحصيل ${coll.collectionOrder}`,
+        description: coll.notes || '',
+        amount: coll.amountEgp,
+        status: coll.status,
+        referenceNumber: null,
+      })),
+    ];
+    
+    return timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }
 }
 

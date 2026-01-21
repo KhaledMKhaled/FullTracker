@@ -450,6 +450,22 @@ export const partySeasons = pgTable("party_seasons", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Party Collections table (مواعيد التحصيل)
+export const partyCollections = pgTable("party_collections", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  partyId: integer("party_id").references(() => parties.id).notNull(),
+  collectionOrder: integer("collection_order").notNull(), // 1, 2, 3, or 4
+  collectionDate: date("collection_date").notNull(),
+  amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }),
+  notes: text("notes"),
+  reminderSent: boolean("reminder_sent").default(false).notNull(),
+  reminderSentAt: timestamp("reminder_sent_at"),
+  status: varchar("status", { length: 20 }).default("pending").notNull(), // 'pending' | 'collected' | 'postponed'
+  collectedAt: timestamp("collected_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Local Invoices table (الفواتير المحلية)
 export const localInvoices = pgTable("local_invoices", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -564,6 +580,14 @@ export const partiesRelations = relations(parties, ({ many }) => ({
   payments: many(localPayments),
   ledgerEntries: many(partyLedgerEntries),
   returnCases: many(returnCases),
+  collections: many(partyCollections),
+}));
+
+export const partyCollectionsRelations = relations(partyCollections, ({ one }) => ({
+  party: one(parties, {
+    fields: [partyCollections.partyId],
+    references: [parties.id],
+  }),
 }));
 
 export const partySeasonsRelations = relations(partySeasons, ({ one, many }) => ({
@@ -708,6 +732,7 @@ export const insertLocalReceiptSchema = createInsertSchema(localReceipts).omit({
 export const insertPartyLedgerEntrySchema = createInsertSchema(partyLedgerEntries).omit({ createdAt: true });
 export const insertLocalPaymentSchema = createInsertSchema(localPayments).omit({ createdAt: true });
 export const insertReturnCaseSchema = createInsertSchema(returnCases).omit({ createdAt: true, updatedAt: true });
+export const insertPartyCollectionSchema = createInsertSchema(partyCollections).omit({ createdAt: true, updatedAt: true });
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -758,3 +783,5 @@ export type InsertLocalPayment = z.infer<typeof insertLocalPaymentSchema>;
 export type LocalPayment = typeof localPayments.$inferSelect;
 export type InsertReturnCase = z.infer<typeof insertReturnCaseSchema>;
 export type ReturnCase = typeof returnCases.$inferSelect;
+export type InsertPartyCollection = z.infer<typeof insertPartyCollectionSchema>;
+export type PartyCollection = typeof partyCollections.$inferSelect;

@@ -3035,4 +3035,91 @@ export async function registerRoutes(
       res.status(500).json({ message: "خطأ في حل حالة المرتجع" });
     }
   });
+
+  // ============ Party Collections (التحصيل) ============
+
+  // GET /api/local-trade/collections?partyId=X
+  // List all collections for a party, ordered by collectionOrder
+  app.get("/api/local-trade/collections", isAuthenticated, async (req, res) => {
+    try {
+      const partyId = req.query.partyId ? parseInt(req.query.partyId as string) : undefined;
+      if (!partyId) {
+        return res.status(400).json({ message: "partyId is required" });
+      }
+      const collections = await routeStorage.getPartyCollections(partyId);
+      res.json(collections);
+    } catch (error) {
+      console.error("Error fetching party collections:", error);
+      res.status(500).json({ message: "خطأ في جلب بيانات التحصيل" });
+    }
+  });
+
+  // POST /api/local-trade/collections
+  // Create or update collection dates (upsert based on partyId + collectionOrder)
+  app.post("/api/local-trade/collections", isAuthenticated, async (req, res) => {
+    try {
+      const { partyId, collections } = req.body;
+      // collections is an array of { collectionOrder, collectionDate, amountEgp, notes }
+      if (!partyId || !Array.isArray(collections)) {
+        return res.status(400).json({ message: "partyId and collections array required" });
+      }
+      const result = await routeStorage.upsertPartyCollections(partyId, collections);
+      res.json(result);
+    } catch (error) {
+      console.error("Error upserting party collections:", error);
+      res.status(500).json({ message: "خطأ في حفظ بيانات التحصيل" });
+    }
+  });
+
+  // PATCH /api/local-trade/collections/:id/status
+  // Mark as collected or postponed
+  app.patch("/api/local-trade/collections/:id/status", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { status } = req.body; // 'collected' | 'postponed' | 'pending'
+      const result = await routeStorage.updateCollectionStatus(id, status);
+      res.json(result);
+    } catch (error) {
+      console.error("Error updating collection status:", error);
+      res.status(500).json({ message: "خطأ في تحديث حالة التحصيل" });
+    }
+  });
+
+  // PATCH /api/local-trade/collections/:id/reminder
+  // Mark reminder as sent
+  app.patch("/api/local-trade/collections/:id/reminder", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const result = await routeStorage.markCollectionReminderSent(id);
+      res.json(result);
+    } catch (error) {
+      console.error("Error marking collection reminder sent:", error);
+      res.status(500).json({ message: "خطأ في تحديث حالة التذكير" });
+    }
+  });
+
+  // DELETE /api/local-trade/collections/:id
+  app.delete("/api/local-trade/collections/:id", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await routeStorage.deletePartyCollection(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting party collection:", error);
+      res.status(500).json({ message: "خطأ في حذف التحصيل" });
+    }
+  });
+
+  // GET /api/local-trade/parties/:id/timeline
+  // Get all activities for a party (invoices, payments, returns, collections) sorted by date
+  app.get("/api/local-trade/parties/:id/timeline", isAuthenticated, async (req, res) => {
+    try {
+      const partyId = parseInt(req.params.id);
+      const timeline = await routeStorage.getPartyTimeline(partyId);
+      res.json(timeline);
+    } catch (error) {
+      console.error("Error fetching party timeline:", error);
+      res.status(500).json({ message: "خطأ في جلب سجل العميل" });
+    }
+  });
 }
