@@ -131,11 +131,9 @@ export default function PartiesPage() {
       addressGovernorate: (formData.get("addressGovernorate") as string) || null,
       paymentTerms: formData.get("paymentTerms") as string,
       creditLimitMode: formData.get("creditLimitMode") as string || "unlimited",
-      creditLimitAmountEgp: formData.get("creditLimitAmountEgp") 
-        ? parseFloat(formData.get("creditLimitAmountEgp") as string) 
-        : null,
+      creditLimitAmountEgp: (formData.get("creditLimitAmountEgp") as string) || null,
       openingBalanceType: formData.get("openingBalanceType") as string || "debit",
-      openingBalanceEgp: parseFloat((formData.get("openingBalanceEgp") as string) || "0"),
+      openingBalanceEgp: (formData.get("openingBalanceEgp") as string) || "0",
       isActive: formData.get("isActive") === "on",
     };
 
