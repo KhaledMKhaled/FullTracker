@@ -48,6 +48,15 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Customer 360 Page Enhancement
+  - Sticky header with customer avatar, badges, and quick action buttons
+  - 6 KPI cards showing: total invoices, total paid, balance, under inspection, last invoice date, last collection date
+  - 7 tabs: نظرة عامة (Overview), الفواتير (Invoices), المدفوعات (Payments), التحصيل (Collections), المرتجعات (Returns), كشف الحساب (Statement), الأرشيف (Archive)
+  - Collections linked to payments: clicking "تم التحصيل" opens payment dialog with pre-filled data
+  - Statement export: PDF and CSV download with Arabic RTL formatting
+  - Notifications system for due/overdue collections with in-app alerts
+  - New notifications table and API endpoints
+  - Optimized batch queries for collection reminders
 - **January 2026**: Enhanced Party Profile as Comprehensive Hub
   - Party profile page is now a complete, independent interface for all party data
   - Added "التحصيل" (Collections) tab with 4 consecutive collection date slots, reminders, status tracking
