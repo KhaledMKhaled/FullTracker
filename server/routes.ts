@@ -3135,4 +3135,40 @@ export async function registerRoutes(
       res.status(500).json({ message: "خطأ في جلب سجل العميل" });
     }
   });
+
+  // ============ Notifications (التنبيهات) ============
+
+  // GET /api/notifications
+  app.get("/api/notifications", isAuthenticated, async (req, res) => {
+    try {
+      const notifications = await routeStorage.getNotifications(req.user!.id);
+      res.json(notifications);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      res.status(500).json({ message: "خطأ في جلب التنبيهات" });
+    }
+  });
+
+  // POST /api/notifications/check-due-collections
+  app.post("/api/notifications/check-due-collections", isAuthenticated, async (req, res) => {
+    try {
+      await routeStorage.checkAndCreateCollectionReminders(req.user!.id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error checking due collections:", error);
+      res.status(500).json({ message: "خطأ في التحقق من التحصيلات" });
+    }
+  });
+
+  // PUT /api/notifications/:id/read
+  app.put("/api/notifications/:id/read", isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await routeStorage.markNotificationRead(id);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error marking notification read:", error);
+      res.status(500).json({ message: "خطأ في تحديث التنبيه" });
+    }
+  });
 }

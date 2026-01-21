@@ -1,4 +1,4 @@
-import { eq, desc, asc, and, sql, inArray } from "drizzle-orm";
+import { eq, desc, asc, and, sql, inArray, lte, gte } from "drizzle-orm";
 import { db } from "./db";
 import {
   users,
@@ -24,6 +24,7 @@ import {
   localPayments,
   returnCases,
   partyCollections,
+  notifications,
   type User,
   type UpsertUser,
   type Supplier,
@@ -67,6 +68,8 @@ import {
   type InsertLocalPayment,
   type ReturnCase,
   type InsertReturnCase,
+  type Notification,
+  type InsertNotification,
 } from "@shared/schema";
 import { normalizePaymentAmounts, roundAmount } from "./services/currency";
 import { getCurrencyTotals } from "./services/currencyTotals";
@@ -952,6 +955,13 @@ export interface IStorage {
   markCollectionReminderSent(id: number): Promise<any>;
   deletePartyCollection(id: number): Promise<void>;
   getPartyTimeline(partyId: number): Promise<any[]>;
+  
+  // Notifications
+  getNotifications(userId: string): Promise<Notification[]>;
+  createNotification(data: InsertNotification): Promise<Notification>;
+  markNotificationRead(id: number): Promise<Notification | undefined>;
+  checkAndCreateCollectionReminders(userId: string): Promise<void>;
+
   getPartyProfileSummary(partyId: number, seasonId?: number): Promise<{
     party: Party;
     seasonId: number | undefined;
@@ -4436,6 +4446,70 @@ export class DatabaseStorage implements IStorage {
         lastCollectionDate: lastCollection[0]?.date || null,
       },
     };
+  }
+
+  // Notifications
+  async getNotifications(userId: string): Promise<Notification[]> {
+    return db.select()
+      .from(notifications)
+      .where(and(
+        eq(notifications.userId, userId),
+        eq(notifications.isRead, false)
+      ))
+      .orderBy(desc(notifications.createdAt));
+  }
+
+  async createNotification(data: InsertNotification): Promise<Notification> {
+    const [notification] = await db.insert(notifications).values(data).returning();
+    return notification;
+  }
+
+  async markNotificationRead(id: number): Promise<Notification | undefined> {
+    const [notification] = await db.update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, id))
+      .returning();
+    return notification;
+  }
+
+  async checkAndCreateCollectionReminders(userId: string): Promise<void> {
+    const today = new Date().toISOString().split('T')[0];
+    const todayStart = new Date(today);
+    
+    // Get collections due today or overdue
+    const dueCollections = await db.select({
+      collection: partyCollections,
+      party: parties,
+    })
+      .from(partyCollections)
+      .innerJoin(parties, eq(partyCollections.partyId, parties.id))
+      .where(and(
+        eq(partyCollections.status, "pending"),
+        lte(partyCollections.collectionDate, today)
+      ));
+    
+    for (const { collection, party } of dueCollections) {
+      // Check if notification already exists for today for this collection
+      const existing = await db.select().from(notifications)
+        .where(and(
+          eq(notifications.referenceType, "collection"),
+          eq(notifications.referenceId, collection.id),
+          gte(notifications.createdAt, todayStart)
+        ))
+        .limit(1);
+      
+      if (existing.length === 0) {
+        const isOverdue = collection.collectionDate < today;
+        await db.insert(notifications).values({
+          userId,
+          type: isOverdue ? "collection_overdue" : "collection_due",
+          title: isOverdue ? "تحصيل متأخر" : "موعد تحصيل اليوم",
+          message: `تحصيل بقيمة ${collection.amountEgp || '0'} ج.م من ${party.name}`,
+          referenceType: "collection",
+          referenceId: collection.id,
+        });
+      }
+    }
   }
 }
 

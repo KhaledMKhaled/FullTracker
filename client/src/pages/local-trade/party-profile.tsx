@@ -73,6 +73,9 @@ import {
   useUpsertPartyCollections,
   useUpdateCollectionStatus,
   useMarkCollectionReminder,
+  useNotifications,
+  useCheckDueCollections,
+  useMarkNotificationRead,
 } from "@/hooks/use-local-trade";
 import { getErrorMessage, queryClient } from "@/lib/queryClient";
 
@@ -178,6 +181,18 @@ interface TimelineItem {
   referenceNumber?: string | null;
 }
 
+interface Notification {
+  id: number;
+  userId: string;
+  type: string;
+  title: string;
+  message: string | null;
+  referenceType: string | null;
+  referenceId: number | null;
+  isRead: boolean;
+  createdAt: string;
+}
+
 function formatCurrency(value: string | number | null | undefined): string {
   if (!value) return "0";
   const num = typeof value === "string" ? parseFloat(value) : value;
@@ -245,6 +260,16 @@ export default function PartyProfilePage() {
     status: returnStatusFilter === "all" ? undefined : returnStatusFilter,
   });
   const { data: seasons, isLoading: isLoadingSeasons } = usePartySeasons(partyId);
+  
+  const { data: notifications = [] } = useNotifications();
+  const checkDueCollectionsMutation = useCheckDueCollections();
+  const markNotificationReadMutation = useMarkNotificationRead();
+  
+  useEffect(() => {
+    if (partyId) {
+      checkDueCollectionsMutation.mutate();
+    }
+  }, [partyId]);
   
   const updateMutation = useUpdateParty();
   const createPaymentMutation = useCreateLocalPayment();
@@ -340,6 +365,16 @@ export default function PartyProfilePage() {
 
           {/* Quick Action Buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {notifications.length > 0 && (
+              <div className="relative">
+                <Button size="sm" variant="outline" className="relative">
+                  <Bell className="w-4 h-4" />
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {notifications.length}
+                  </span>
+                </Button>
+              </div>
+            )}
             <Button size="sm" onClick={() => setIsPaymentDialogOpen(true)}>
               <Plus className="w-4 h-4 ml-1" />
               تسجيل دفعة
@@ -431,6 +466,8 @@ export default function PartyProfilePage() {
             summary={summary}
             currentBalance={currentBalance}
             onSettlement={() => setIsSettlementDialogOpen(true)}
+            notifications={notifications as Notification[]}
+            onDismissNotification={(id: number) => markNotificationReadMutation.mutate(id)}
           />
         </TabsContent>
 
@@ -582,17 +619,74 @@ function OverviewTab({
   summary,
   currentBalance,
   onSettlement,
+  notifications,
+  onDismissNotification,
 }: {
   party: Party;
   summary: any;
   currentBalance: number;
   onSettlement: () => void;
+  notifications: Notification[];
+  onDismissNotification: (id: number) => void;
 }) {
   const isDebit = currentBalance > 0;
   const isCredit = currentBalance < 0;
 
   return (
     <div className="space-y-6">
+      {notifications && notifications.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-amber-800 flex items-center gap-2">
+              <Bell className="w-5 h-5" />
+              تنبيهات التحصيل
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {notifications.map((notification) => (
+              <div
+                key={notification.id}
+                className={`flex items-center justify-between p-3 rounded-lg ${
+                  notification.type === "collection_overdue"
+                    ? "bg-red-100 border border-red-200"
+                    : "bg-amber-100 border border-amber-200"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {notification.type === "collection_overdue" ? (
+                    <AlertCircle className="w-5 h-5 text-red-600" />
+                  ) : (
+                    <Clock className="w-5 h-5 text-amber-600" />
+                  )}
+                  <div>
+                    <p className={`font-medium ${
+                      notification.type === "collection_overdue" ? "text-red-800" : "text-amber-800"
+                    }`}>
+                      {notification.title}
+                    </p>
+                    {notification.message && (
+                      <p className={`text-sm ${
+                        notification.type === "collection_overdue" ? "text-red-600" : "text-amber-600"
+                      }`}>
+                        {notification.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onDismissNotification(notification.id)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>معلومات الملف</CardTitle>

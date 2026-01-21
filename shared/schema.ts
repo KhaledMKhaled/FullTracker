@@ -554,6 +554,19 @@ export const localPayments = pgTable("local_payments", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Notifications table (الإشعارات)
+export const notifications = pgTable("notifications", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id", { length: 255 }).notNull(),
+  type: varchar("type", { length: 50 }).notNull(), // collection_due, collection_overdue
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  referenceType: varchar("reference_type", { length: 50 }), // party, collection
+  referenceId: integer("reference_id"),
+  isRead: boolean("is_read").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Return Cases table (حالات المرتجعات والهوامش)
 export const returnCases = pgTable("return_cases", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -735,6 +748,7 @@ export const insertPartyLedgerEntrySchema = createInsertSchema(partyLedgerEntrie
 export const insertLocalPaymentSchema = createInsertSchema(localPayments).omit({ createdAt: true });
 export const insertReturnCaseSchema = createInsertSchema(returnCases).omit({ createdAt: true, updatedAt: true });
 export const insertPartyCollectionSchema = createInsertSchema(partyCollections).omit({ createdAt: true, updatedAt: true });
+export const insertNotificationSchema = createInsertSchema(notifications).omit({ createdAt: true });
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -787,3 +801,5 @@ export type InsertReturnCase = z.infer<typeof insertReturnCaseSchema>;
 export type ReturnCase = typeof returnCases.$inferSelect;
 export type InsertPartyCollection = z.infer<typeof insertPartyCollectionSchema>;
 export type PartyCollection = typeof partyCollections.$inferSelect;
+export type InsertNotification = z.infer<typeof insertNotificationSchema>;
+export type Notification = typeof notifications.$inferSelect;
