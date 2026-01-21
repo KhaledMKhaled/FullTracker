@@ -48,6 +48,13 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Invoice-Payment Linking System
+  - Payments can now be linked to specific invoices
+  - Track paid amount, remaining balance, and payment status (مسدد/جزئي/غير مسدد) per invoice
+  - Payment dialog shows list of unpaid invoices with balances
+  - Auto-fill payment amount when selecting an invoice
+  - Invoices tab shows: الإجمالي, المدفوع, المتبقي, حالة السداد columns
+  - Payments tab shows linked invoice reference number
 - **January 2026**: Party-Centric Workflow
   - Removed الفواتير, المدفوعات, الهوامش from main sidebar navigation
   - All actions now performed from within party profile pages
