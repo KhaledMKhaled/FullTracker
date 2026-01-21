@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import {
   Users,
   Plus,
@@ -538,13 +539,15 @@ export default function PartiesPage() {
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          data-testid={`button-view-party-${party.id}`}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
+                        <Link href={`/local-trade/parties/${party.id}`}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            data-testid={`button-view-party-${party.id}`}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </Link>
                       </div>
                     </TableCell>
                   </TableRow>
