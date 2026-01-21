@@ -97,6 +97,7 @@ export default function PartiesPage() {
   const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [formPaymentTerms, setFormPaymentTerms] = useState("cash");
   const [formCreditLimitMode, setFormCreditLimitMode] = useState("unlimited");
+  const [formOpeningBalanceType, setFormOpeningBalanceType] = useState("debit");
   const { toast } = useToast();
 
   const filters = {
@@ -132,7 +133,7 @@ export default function PartiesPage() {
       paymentTerms: formData.get("paymentTerms") as string,
       creditLimitMode: formData.get("creditLimitMode") as string || "unlimited",
       creditLimitAmountEgp: (formData.get("creditLimitAmountEgp") as string) || null,
-      openingBalanceType: formData.get("openingBalanceType") as string || "debit",
+      openingBalanceType: formOpeningBalanceType,
       openingBalanceEgp: (formData.get("openingBalanceEgp") as string) || "0",
       isActive: formData.get("isActive") === "on",
     };
@@ -169,6 +170,7 @@ export default function PartiesPage() {
     setEditingParty(party);
     setFormPaymentTerms(party.paymentTerms);
     setFormCreditLimitMode(party.creditLimitMode);
+    setFormOpeningBalanceType(party.openingBalanceType || "debit");
     setIsDialogOpen(true);
   };
 
@@ -176,6 +178,7 @@ export default function PartiesPage() {
     setEditingParty(null);
     setFormPaymentTerms("cash");
     setFormCreditLimitMode("unlimited");
+    setFormOpeningBalanceType("debit");
     setIsDialogOpen(true);
   };
 
@@ -364,17 +367,17 @@ export default function PartiesPage() {
                   <div className="space-y-3">
                     <Label>نوع الرصيد</Label>
                     <RadioGroup
-                      name="openingBalanceType"
-                      defaultValue={editingParty?.openingBalanceType || "debit"}
+                      value={formOpeningBalanceType}
+                      onValueChange={setFormOpeningBalanceType}
                       className="flex gap-6"
                     >
                       <div className="flex items-center gap-2">
                         <RadioGroupItem value="debit" id="balance-debit" />
-                        <Label htmlFor="balance-debit" className="cursor-pointer">مدين (له)</Label>
+                        <Label htmlFor="balance-debit" className="cursor-pointer">مدين (عليه)</Label>
                       </div>
                       <div className="flex items-center gap-2">
                         <RadioGroupItem value="credit" id="balance-credit" />
-                        <Label htmlFor="balance-credit" className="cursor-pointer">دائن (عليه)</Label>
+                        <Label htmlFor="balance-credit" className="cursor-pointer">دائن (له)</Label>
                       </div>
                     </RadioGroup>
                   </div>
