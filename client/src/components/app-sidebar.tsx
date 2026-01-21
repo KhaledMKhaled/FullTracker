@@ -98,24 +98,6 @@ const localTradeItems = [
     icon: Users,
     tooltip: "إدارة التجار والعملاء",
   },
-  {
-    title: "الفواتير",
-    url: "/local-trade/invoices",
-    icon: FileSpreadsheet,
-    tooltip: "فواتير الشراء والمرتجعات",
-  },
-  {
-    title: "المدفوعات",
-    url: "/local-trade/payments",
-    icon: CreditCard,
-    tooltip: "تسجيل المدفوعات والتحصيلات",
-  },
-  {
-    title: "الهوامش",
-    url: "/local-trade/returns",
-    icon: RotateCcw,
-    tooltip: "حالات الهوامش والنواقص",
-  },
 ];
 
 const accountingItems = [

@@ -48,6 +48,10 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Party-Centric Workflow
+  - Removed الفواتير, المدفوعات, الهوامش from main sidebar navigation
+  - All actions now performed from within party profile pages
+  - Users must navigate to a party's profile to create invoices, record payments, or manage margins
 - **January 2026**: Added Third Party Type "مزدوج"
   - New party type "both" (مزدوج) allows executing purchase and sale transactions with same party
   - Available alongside existing "تاجر" (merchant) and "عميل" (customer) types
