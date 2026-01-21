@@ -162,12 +162,14 @@ interface Collection {
   id: number;
   partyId: number;
   collectionOrder: number;
-  collectionDate: string;
+  collectionDate: string | null;
   amountEgp: string | null;
   notes: string | null;
   reminderSent: boolean;
   status: string;
   linkedPaymentId?: number | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface TimelineItem {
@@ -1034,6 +1036,7 @@ function LedgerTab({
   partyData: Party; 
   currentBalance: number; 
 }) {
+  const { toast } = useToast();
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -1059,6 +1062,15 @@ function LedgerTab({
   };
 
   const handleExportPDF = async () => {
+    if (!filteredEntries || filteredEntries.length === 0) {
+      toast({
+        title: "لا توجد بيانات",
+        description: "لا توجد حركات لتصديرها",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const { jsPDF } = await import("jspdf");
     await import("jspdf-autotable");
     
@@ -1134,6 +1146,15 @@ function LedgerTab({
   };
 
   const handleExportCSV = () => {
+    if (!filteredEntries || filteredEntries.length === 0) {
+      toast({
+        title: "لا توجد بيانات",
+        description: "لا توجد حركات لتصديرها",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const headers = ["التاريخ", "البيان", "مدين", "دائن", "الرصيد"];
     const rows = filteredEntries.map(entry => {
       const balance = parseFloat(entry.balanceEgp || "0");
@@ -1377,9 +1398,10 @@ function CollectionsTab({
 
   const handleCollectionPayment = async () => {
     if (!collectionForPayment) return;
-    
     setIsSubmitting(true);
+    
     try {
+      // Create payment with linked collection ID
       const paymentRes = await fetch("/api/local-trade/payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1389,34 +1411,58 @@ function CollectionsTab({
           paymentDate: paymentDate,
           amountEgp: parseFloat(paymentAmount),
           paymentMethod: paymentMethod,
-          notes: paymentNote || `تحصيل مجدول بتاريخ ${collectionForPayment.collectionDate}`,
+          notes: paymentNote || `تحصيل مجدول`,
           linkedCollectionId: collectionForPayment.id,
         }),
       });
-      if (!paymentRes.ok) throw new Error(await paymentRes.text());
-      const payment = await paymentRes.json();
       
-      const statusRes = await fetch(`/api/local-trade/collections/${collectionForPayment.id}/status`, {
+      if (!paymentRes.ok) {
+        const errorText = await paymentRes.text();
+        throw new Error(errorText);
+      }
+      
+      const payment = await paymentRes.json();
+      const paymentId = payment.id;
+      
+      if (!paymentId) {
+        throw new Error("لم يتم إرجاع معرف الدفعة");
+      }
+      
+      // Mark collection as collected with linked payment ID
+      const updateRes = await fetch(`/api/local-trade/collections/${collectionForPayment.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
           status: "collected",
-          linkedPaymentId: payment.id,
+          linkedPaymentId: paymentId,
         }),
       });
-      if (!statusRes.ok) throw new Error(await statusRes.text());
       
-      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", partyId, "collections"] });
+      if (!updateRes.ok) {
+        const errorText = await updateRes.text();
+        throw new Error(errorText);
+      }
+      
+      // Refresh data
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties", partyId] });
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/collections"] });
       
-      toast({ title: "تم تسجيل الدفعة وربطها بالتحصيل بنجاح" });
+      toast({
+        title: "تم التحصيل",
+        description: "تم تسجيل الدفعة وتحديث موعد التحصيل",
+      });
+      
       setIsCollectionPaymentOpen(false);
       setCollectionForPayment(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating collection payment:", error);
-      toast({ title: getErrorMessage(error), variant: "destructive" });
+      toast({
+        title: "خطأ",
+        description: error.message || "حدث خطأ أثناء تسجيل الدفعة",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmitting(false);
     }

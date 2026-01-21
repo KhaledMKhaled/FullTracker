@@ -4473,10 +4473,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async checkAndCreateCollectionReminders(userId: string): Promise<void> {
-    const today = new Date().toISOString().split('T')[0];
-    const todayStart = new Date(today);
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const startOfToday = new Date(todayStr);
     
-    // Get collections due today or overdue
+    // Get collections due today or overdue in a single query
     const dueCollections = await db.select({
       collection: partyCollections,
       party: parties,
@@ -4485,30 +4486,44 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(parties, eq(partyCollections.partyId, parties.id))
       .where(and(
         eq(partyCollections.status, "pending"),
-        lte(partyCollections.collectionDate, today)
+        lte(partyCollections.collectionDate, todayStr)
       ));
     
-    for (const { collection, party } of dueCollections) {
-      // Check if notification already exists for today for this collection
-      const existing = await db.select().from(notifications)
-        .where(and(
-          eq(notifications.referenceType, "collection"),
-          eq(notifications.referenceId, collection.id),
-          gte(notifications.createdAt, todayStart)
-        ))
-        .limit(1);
-      
-      if (existing.length === 0) {
-        const isOverdue = collection.collectionDate < today;
-        await db.insert(notifications).values({
+    if (dueCollections.length === 0) return;
+    
+    // Get all collection IDs
+    const collectionIds = dueCollections.map(dc => dc.collection.id);
+    
+    // Get existing notifications for these collections created today - single query
+    const existingNotifications = await db.select()
+      .from(notifications)
+      .where(and(
+        eq(notifications.referenceType, "collection"),
+        inArray(notifications.referenceId, collectionIds),
+        gte(notifications.createdAt, startOfToday)
+      ));
+    
+    // Create a set of collection IDs that already have notifications
+    const existingCollectionIds = new Set(existingNotifications.map(n => n.referenceId));
+    
+    // Build notifications to insert (only for collections without today's notification)
+    const notificationsToInsert = dueCollections
+      .filter(dc => !existingCollectionIds.has(dc.collection.id))
+      .map(({ collection, party }) => {
+        const isOverdue = collection.collectionDate && collection.collectionDate < todayStr;
+        return {
           userId,
           type: isOverdue ? "collection_overdue" : "collection_due",
           title: isOverdue ? "تحصيل متأخر" : "موعد تحصيل اليوم",
-          message: `تحصيل بقيمة ${collection.amountEgp || '0'} ج.م من ${party.name}`,
-          referenceType: "collection",
+          message: `تحصيل بقيمة ${collection.amountEgp} ج.م من ${party.name}`,
+          referenceType: "collection" as const,
           referenceId: collection.id,
-        });
-      }
+        };
+      });
+    
+    // Batch insert if there are notifications to create
+    if (notificationsToInsert.length > 0) {
+      await db.insert(notifications).values(notificationsToInsert);
     }
   }
 }
