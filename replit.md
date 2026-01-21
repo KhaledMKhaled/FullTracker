@@ -48,6 +48,13 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Enhanced Invoice Receiving & Viewing
+  - Redesigned receive dialog to match invoice creation format
+  - Product images with hover preview for all line items
+  - Summary cards showing: lines count, total cartons, total pieces, total amount
+  - Each line displays: image, name, cartons, pieces/carton, unit mode, unit price, line total
+  - Clear inventory impact message (add for purchase, subtract for sale)
+  - Unified visual design across create, view, and receive dialogs
 - **January 2026**: Comprehensive Invoice Creation Wizard
   - New dedicated page for creating local trade invoices (/local-trade/invoices/new)
   - Sticky header with: merchant dropdown, auto-filled date, reference name, auto-generated reference number
