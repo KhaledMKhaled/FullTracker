@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -102,6 +102,7 @@ export default function CreateInvoicePage() {
   const [partyId, setPartyId] = useState<number | null>(null);
   const [invoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [referenceName, setReferenceName] = useState("");
+  const [referenceNumber, setReferenceNumber] = useState("");
   const [lines, setLines] = useState<InvoiceLineItem[]>([createEmptyLine()]);
 
   const { data: parties } = useParties({ type: "merchant" });
@@ -118,6 +119,12 @@ export default function CreateInvoicePage() {
       return res.json();
     },
   });
+
+  useEffect(() => {
+    if (nextRef?.referenceNumber) {
+      setReferenceNumber(nextRef.referenceNumber);
+    }
+  }, [nextRef]);
 
   const createMutation = useCreateLocalInvoice();
 
@@ -263,7 +270,8 @@ export default function CreateInvoicePage() {
       invoiceKind: "purchase",
       partyId,
       invoiceDate,
-      notes: referenceName || null,
+      referenceName: referenceName || null,
+      referenceNumber: referenceNumber,
       lines: lines.map((l) => ({
         productTypeId: l.productTypeId,
         productName: l.productName,

@@ -201,10 +201,12 @@ export default function InvoicesPage() {
             </p>
           </div>
         </div>
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="w-4 h-4 ml-2" />
-          فاتورة جديدة
-        </Button>
+        <Link href="/local-trade/invoices/new">
+          <Button>
+            <Plus className="w-4 h-4 ml-2" />
+            فاتورة جديدة
+          </Button>
+        </Link>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
