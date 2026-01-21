@@ -8,6 +8,8 @@ import {
   Eye,
   Package,
   Trash2,
+  Camera,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +33,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { Card } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -73,10 +81,22 @@ interface InvoiceLine {
   id?: number;
   productTypeId: number | null;
   productTypeName?: string;
+  productName: string;
+  imageUrl?: string | null;
+  cartons: number;
+  piecesPerCarton: number;
+  totalPieces: number;
+  unitMode: string;
+  unitPriceEgp: string;
+  totalDozens?: string;
+  lineTotalEgp: string;
+}
+
+interface CreateInvoiceLineInput {
+  productTypeId: number | null;
   quantity: number;
   unit: string;
   unitPriceEgp: number;
-  receivedQuantity?: number;
 }
 
 interface Invoice {
@@ -386,7 +406,7 @@ function CreateInvoiceDialog({
     new Date().toISOString().split("T")[0]
   );
   const [notes, setNotes] = useState("");
-  const [lines, setLines] = useState<InvoiceLine[]>([
+  const [lines, setLines] = useState<CreateInvoiceLineInput[]>([
     { productTypeId: null, quantity: 1, unit: "piece", unitPriceEgp: 0 },
   ]);
   const [partyOpen, setPartyOpen] = useState(false);
@@ -417,14 +437,14 @@ function CreateInvoiceDialog({
     }
   };
 
-  const updateLine = (index: number, updates: Partial<InvoiceLine>) => {
+  const updateLine = (index: number, updates: Partial<CreateInvoiceLineInput>) => {
     setLines(lines.map((line, i) => (i === index ? { ...line, ...updates } : line)));
   };
 
-  const lineTotal = (line: InvoiceLine) => line.quantity * line.unitPriceEgp;
+  const lineTotal = (line: CreateInvoiceLineInput) => line.quantity * line.unitPriceEgp;
   const invoiceTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
 
-  const getLineError = (line: InvoiceLine): string | null => {
+  const getLineError = (line: CreateInvoiceLineInput): string | null => {
     return validateDozenQuantity(line.quantity, line.unit);
   };
 
@@ -734,33 +754,24 @@ function ReceiveInvoiceDialog({
   isLoading,
 }: ReceiveInvoiceDialogProps) {
   const { data: invoice } = useLocalInvoice(invoiceId || 0);
-  const [receivedQuantities, setReceivedQuantities] = useState<Record<number, number>>({});
   const [notes, setNotes] = useState("");
 
-  const invoiceData = invoice as Invoice | undefined;
+  const invoiceData = invoice as { invoice: Invoice; lines: InvoiceLine[] } | undefined;
+  const inv = invoiceData?.invoice;
+  const lines = invoiceData?.lines || [];
 
   const handleSubmit = () => {
-    if (!invoiceData?.lines) return;
-
-    const lines = invoiceData.lines
-      .filter((line) => line.id && receivedQuantities[line.id] > 0)
-      .map((line) => ({
-        lineId: line.id,
-        receivedQuantity: receivedQuantities[line.id!] || 0,
-      }));
-
-    if (lines.length === 0) return;
-
-    onSubmit({
-      notes: notes || null,
-      lines,
-    });
+    if (!lines.length) return;
+    onSubmit({ notes: notes || null });
   };
 
   const resetForm = () => {
-    setReceivedQuantities({});
     setNotes("");
   };
+
+  const totalCartons = lines.reduce((sum, l) => sum + (l.cartons || 0), 0);
+  const totalPieces = lines.reduce((sum, l) => sum + (l.totalPieces || 0), 0);
+  const invoiceTotal = lines.reduce((sum, l) => sum + parseFloat(l.lineTotalEgp || "0"), 0);
 
   return (
     <Dialog
@@ -770,95 +781,169 @@ function ReceiveInvoiceDialog({
         onOpenChange(val);
       }}
     >
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle>استلام أصناف - {invoiceData?.invoiceNumber}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-primary" />
+            استلام الفاتورة - {inv?.invoiceNumber}
+          </DialogTitle>
         </DialogHeader>
 
-        {invoiceData ? (
+        {inv ? (
           <div className="space-y-6">
-            <div className="border rounded-lg overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-right">الصنف</TableHead>
-                    <TableHead className="text-right">الوحدة</TableHead>
-                    <TableHead className="text-right">المطلوب</TableHead>
-                    <TableHead className="text-right">تم استلامه</TableHead>
-                    <TableHead className="text-right">المتبقي</TableHead>
-                    <TableHead className="text-right">الكمية المستلمة الآن</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoiceData.lines?.map((line) => {
-                    const remaining = line.quantity - (line.receivedQuantity || 0);
-                    return (
-                      <TableRow key={line.id}>
-                        <TableCell>{line.productTypeName}</TableCell>
-                        <TableCell>{getUnitLabel(line.unit)}</TableCell>
-                        <TableCell>{line.quantity}</TableCell>
-                        <TableCell>{line.receivedQuantity || 0}</TableCell>
-                        <TableCell>
-                          <Badge variant={remaining > 0 ? "secondary" : "default"}>
-                            {remaining}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            min="0"
-                            max={remaining}
-                            value={receivedQuantities[line.id!] || ""}
-                            onChange={(e) =>
-                              setReceivedQuantities({
-                                ...receivedQuantities,
-                                [line.id!]: Math.min(
-                                  parseInt(e.target.value) || 0,
-                                  remaining
-                                ),
-                              })
-                            }
-                            className="w-24"
-                            disabled={remaining === 0}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-muted/30 p-4 rounded-lg">
+              <div>
+                <Label className="text-xs text-muted-foreground">رقم الفاتورة</Label>
+                <p className="font-mono font-medium">{inv.invoiceNumber}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">التاريخ</Label>
+                <p>{new Date(inv.invoiceDate).toLocaleDateString("ar-EG")}</p>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">النوع</Label>
+                <Badge variant={inv.invoiceKind === "purchase" ? "default" : "secondary"}>
+                  {inv.invoiceKind === "purchase" ? "شراء" : inv.invoiceKind === "sale" ? "بيع" : inv.invoiceKind}
+                </Badge>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">الطرف</Label>
+                <p className="font-medium">{inv.partyName}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-4 gap-4">
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{lines.length}</div>
+                <div className="text-xs text-muted-foreground">عدد البنود</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{totalCartons.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">إجمالي الكراتين</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{totalPieces.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">إجمالي القطع</div>
+              </Card>
+              <Card className="p-3 text-center bg-primary/5">
+                <div className="text-xl font-bold text-primary">{invoiceTotal.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">الإجمالي (ج.م)</div>
+              </Card>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="font-semibold">بنود الفاتورة</Label>
+              
+              {lines.map((line, index) => (
+                <div key={line.id || index} className="grid grid-cols-12 gap-3 p-4 border rounded-lg items-center bg-card">
+                  <div className="col-span-1">
+                    <HoverCard>
+                      <HoverCardTrigger asChild>
+                        <div className="w-14 h-14 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
+                          {line.imageUrl ? (
+                            <img
+                              src={line.imageUrl}
+                              className="w-full h-full object-cover"
+                              alt={line.productName}
+                            />
+                          ) : (
+                            <Camera className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                      </HoverCardTrigger>
+                      {line.imageUrl && (
+                        <HoverCardContent className="w-72 p-2">
+                          <img
+                            src={line.imageUrl}
+                            className="w-full h-64 object-contain rounded"
+                            alt={line.productName}
                           />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                        </HoverCardContent>
+                      )}
+                    </HoverCard>
+                  </div>
+
+                  <div className="col-span-3">
+                    <Label className="text-xs text-muted-foreground">اسم المنتج</Label>
+                    <p className="font-medium truncate">{line.productName}</p>
+                  </div>
+
+                  <div className="col-span-1 text-center">
+                    <Label className="text-xs text-muted-foreground">كراتين</Label>
+                    <p className="font-mono">{line.cartons || 0}</p>
+                  </div>
+
+                  <div className="col-span-1 text-center">
+                    <Label className="text-xs text-muted-foreground">قطع/كرتونة</Label>
+                    <p className="font-mono">{line.piecesPerCarton || 0}</p>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <Label className="text-xs text-muted-foreground">
+                      {line.unitMode === "dozen" ? "الدست" : "القطع"}
+                    </Label>
+                    <p className="font-mono font-medium">
+                      {line.unitMode === "dozen" 
+                        ? `${parseFloat(line.totalDozens || "0").toFixed(2)} دستة`
+                        : `${line.totalPieces} قطعة`
+                      }
+                    </p>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <Label className="text-xs text-muted-foreground">سعر الوحدة</Label>
+                    <p className="font-mono">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <Label className="text-xs text-muted-foreground">إجمالي البند</Label>
+                    <p className="font-mono font-bold text-primary">
+                      {parseFloat(line.lineTotalEgp || "0").toLocaleString("ar-EG")} ج.م
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div className="space-y-2">
-              <Label>ملاحظات الاستلام</Label>
+              <Label>ملاحظات الاستلام (اختياري)</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
-                placeholder="ملاحظات اختيارية..."
+                placeholder="أي ملاحظات على الاستلام..."
                 rows={2}
               />
             </div>
 
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
-                إلغاء
-              </Button>
-              <Button
-                onClick={handleSubmit}
-                disabled={
-                  isLoading ||
-                  Object.values(receivedQuantities).every((q) => !q || q <= 0)
+            <div className="flex justify-between items-center pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                {inv.invoiceKind === "purchase" 
+                  ? "سيتم إضافة جميع الأصناف للمخزن"
+                  : inv.invoiceKind === "sale"
+                  ? "سيتم خصم جميع الأصناف من المخزن"
+                  : ""
                 }
-              >
-                {isLoading ? "جاري الحفظ..." : "تأكيد الاستلام"}
-              </Button>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                  إلغاء
+                </Button>
+                <Button
+                  onClick={handleSubmit}
+                  disabled={isLoading || lines.length === 0}
+                  className="gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  {isLoading ? "جاري الاستلام..." : "تأكيد استلام الفاتورة"}
+                </Button>
+              </div>
             </div>
           </div>
         ) : (
           <div className="space-y-3 py-4">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
           </div>
         )}
       </DialogContent>
@@ -874,130 +959,152 @@ interface ViewInvoiceDialogProps {
 
 function ViewInvoiceDialog({ open, onOpenChange, invoiceId }: ViewInvoiceDialogProps) {
   const { data: invoice } = useLocalInvoice(invoiceId || 0);
-  const invoiceData = invoice as Invoice | undefined;
+  const invoiceData = invoice as { invoice: Invoice; lines: InvoiceLine[] } | undefined;
+  const inv = invoiceData?.invoice;
+  const lines = invoiceData?.lines || [];
+
+  const totalCartons = lines.reduce((sum, l) => sum + (l.cartons || 0), 0);
+  const totalPieces = lines.reduce((sum, l) => sum + (l.totalPieces || 0), 0);
+  const invoiceTotal = lines.reduce((sum, l) => sum + parseFloat(l.lineTotalEgp || "0"), 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
+      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto" dir="rtl">
         <DialogHeader>
-          <DialogTitle>تفاصيل الفاتورة - {invoiceData?.invoiceNumber}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            <Eye className="w-5 h-5 text-primary" />
+            تفاصيل الفاتورة - {inv?.invoiceNumber}
+          </DialogTitle>
         </DialogHeader>
 
-        {invoiceData ? (
+        {inv ? (
           <div className="space-y-6">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-muted/30 p-4 rounded-lg">
               <div>
-                <Label className="text-muted-foreground">رقم الفاتورة</Label>
-                <p className="font-mono">{invoiceData.invoiceNumber}</p>
+                <Label className="text-xs text-muted-foreground">رقم الفاتورة</Label>
+                <p className="font-mono font-medium">{inv.invoiceNumber}</p>
               </div>
               <div>
-                <Label className="text-muted-foreground">التاريخ</Label>
-                <p>{new Date(invoiceData.invoiceDate).toLocaleDateString("ar-EG")}</p>
+                <Label className="text-xs text-muted-foreground">التاريخ</Label>
+                <p>{new Date(inv.invoiceDate).toLocaleDateString("ar-EG")}</p>
               </div>
               <div>
-                <Label className="text-muted-foreground">النوع</Label>
-                <p>
-                  <Badge variant={invoiceData.invoiceKind === "purchase" ? "default" : "secondary"}>
-                    {getKindLabel(invoiceData.invoiceKind)}
-                  </Badge>
-                </p>
+                <Label className="text-xs text-muted-foreground">النوع</Label>
+                <Badge variant={inv.invoiceKind === "purchase" ? "default" : "secondary"}>
+                  {inv.invoiceKind === "purchase" ? "شراء" : inv.invoiceKind === "sale" ? "بيع" : inv.invoiceKind}
+                </Badge>
               </div>
               <div>
-                <Label className="text-muted-foreground">الحالة</Label>
-                <p>{getStatusBadge(invoiceData.status)}</p>
+                <Label className="text-xs text-muted-foreground">الحالة</Label>
+                {getStatusBadge(inv.status)}
               </div>
             </div>
 
-            <div>
-              <Label className="text-muted-foreground">الطرف</Label>
-              <p>{invoiceData.partyName}</p>
-            </div>
-
-            {invoiceData.notes && (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-muted-foreground">ملاحظات</Label>
-                <p>{invoiceData.notes}</p>
+                <Label className="text-xs text-muted-foreground">الطرف</Label>
+                <p className="font-medium">{inv.partyName}</p>
               </div>
-            )}
-
-            <div className="space-y-2">
-              <Label>بنود الفاتورة</Label>
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-right">الصنف</TableHead>
-                      <TableHead className="text-right">الوحدة</TableHead>
-                      <TableHead className="text-right">الكمية</TableHead>
-                      <TableHead className="text-right">سعر الوحدة</TableHead>
-                      <TableHead className="text-right">الإجمالي</TableHead>
-                      <TableHead className="text-right">تم استلامه</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {invoiceData.lines?.map((line) => (
-                      <TableRow key={line.id}>
-                        <TableCell>{line.productTypeName}</TableCell>
-                        <TableCell>{getUnitLabel(line.unit)}</TableCell>
-                        <TableCell>{line.quantity}</TableCell>
-                        <TableCell className="font-mono">
-                          {line.unitPriceEgp.toLocaleString("ar-EG")}
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          {(line.quantity * line.unitPriceEgp).toLocaleString("ar-EG")}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant={
-                              (line.receivedQuantity || 0) >= line.quantity
-                                ? "default"
-                                : "secondary"
-                            }
-                          >
-                            {line.receivedQuantity || 0} / {line.quantity}
-                          </Badge>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <div className="bg-muted p-4 rounded-lg">
-                <div className="flex items-center gap-4">
-                  <span className="text-muted-foreground">إجمالي الفاتورة:</span>
-                  <span className="text-xl font-bold">
-                    {parseFloat(invoiceData.totalEgp).toLocaleString("ar-EG")} ج.م
-                  </span>
+              {inv.notes && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">ملاحظات</Label>
+                  <p className="text-sm">{inv.notes}</p>
                 </div>
-              </div>
+              )}
             </div>
 
-            {invoiceData.receipts && invoiceData.receipts.length > 0 && (
-              <div className="space-y-2">
-                <Label>سجل الاستلام</Label>
-                <div className="space-y-2">
-                  {invoiceData.receipts.map((receipt, index) => (
-                    <div
-                      key={receipt.id}
-                      className="border rounded-lg p-3 bg-muted/50"
-                    >
-                      <div className="flex justify-between items-center mb-2">
-                        <span className="font-medium">استلام #{index + 1}</span>
-                        <span className="text-sm text-muted-foreground">
-                          {new Date(receipt.receivedAt).toLocaleDateString("ar-EG")}
-                        </span>
-                      </div>
-                      {receipt.notes && (
-                        <p className="text-sm text-muted-foreground">{receipt.notes}</p>
+            <div className="grid grid-cols-4 gap-4">
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{lines.length}</div>
+                <div className="text-xs text-muted-foreground">عدد البنود</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{totalCartons.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">إجمالي الكراتين</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{totalPieces.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">إجمالي القطع</div>
+              </Card>
+              <Card className="p-3 text-center bg-primary/5">
+                <div className="text-xl font-bold text-primary">{invoiceTotal.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">الإجمالي (ج.م)</div>
+              </Card>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="font-semibold">بنود الفاتورة</Label>
+              
+              {lines.map((line, index) => (
+                <div key={line.id || index} className="grid grid-cols-12 gap-3 p-4 border rounded-lg items-center bg-card">
+                  <div className="col-span-1">
+                    <HoverCard>
+                      <HoverCardTrigger asChild>
+                        <div className="w-14 h-14 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
+                          {line.imageUrl ? (
+                            <img
+                              src={line.imageUrl}
+                              className="w-full h-full object-cover"
+                              alt={line.productName}
+                            />
+                          ) : (
+                            <Camera className="w-5 h-5 text-muted-foreground" />
+                          )}
+                        </div>
+                      </HoverCardTrigger>
+                      {line.imageUrl && (
+                        <HoverCardContent className="w-72 p-2">
+                          <img
+                            src={line.imageUrl}
+                            className="w-full h-64 object-contain rounded"
+                            alt={line.productName}
+                          />
+                        </HoverCardContent>
                       )}
-                    </div>
-                  ))}
+                    </HoverCard>
+                  </div>
+
+                  <div className="col-span-3">
+                    <Label className="text-xs text-muted-foreground">اسم المنتج</Label>
+                    <p className="font-medium truncate">{line.productName}</p>
+                  </div>
+
+                  <div className="col-span-1 text-center">
+                    <Label className="text-xs text-muted-foreground">كراتين</Label>
+                    <p className="font-mono">{line.cartons || 0}</p>
+                  </div>
+
+                  <div className="col-span-1 text-center">
+                    <Label className="text-xs text-muted-foreground">قطع/كرتونة</Label>
+                    <p className="font-mono">{line.piecesPerCarton || 0}</p>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <Label className="text-xs text-muted-foreground">
+                      {line.unitMode === "dozen" ? "الدست" : "القطع"}
+                    </Label>
+                    <p className="font-mono font-medium">
+                      {line.unitMode === "dozen" 
+                        ? `${parseFloat(line.totalDozens || "0").toFixed(2)} دستة`
+                        : `${line.totalPieces} قطعة`
+                      }
+                    </p>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <Label className="text-xs text-muted-foreground">سعر الوحدة</Label>
+                    <p className="font-mono">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
+                  </div>
+
+                  <div className="col-span-2 text-center">
+                    <Label className="text-xs text-muted-foreground">إجمالي البند</Label>
+                    <p className="font-mono font-bold text-primary">
+                      {parseFloat(line.lineTotalEgp || "0").toLocaleString("ar-EG")} ج.م
+                    </p>
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
 
             <div className="flex justify-end">
               <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -1007,9 +1114,9 @@ function ViewInvoiceDialog({ open, onOpenChange, invoiceId }: ViewInvoiceDialogP
           </div>
         ) : (
           <div className="space-y-3 py-4">
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
-            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
           </div>
         )}
       </DialogContent>
