@@ -1988,6 +1988,27 @@ function PaymentDialog({
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [notes, setNotes] = useState("");
+  const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
+
+  // Fetch invoices for this party with payment info
+  const { data: invoices } = useLocalInvoices({ partyId });
+  
+  // Filter to show only invoices with remaining balance
+  const unpaidInvoices = (invoices || []).filter((inv: any) => 
+    parseFloat(inv.remainingAmount || inv.totalEgp) > 0 && inv.status !== 'draft'
+  );
+
+  const handleInvoiceChange = (invoiceId: string) => {
+    setSelectedInvoiceId(invoiceId);
+    if (invoiceId) {
+      const invoice = unpaidInvoices.find((inv: any) => inv.id.toString() === invoiceId);
+      if (invoice) {
+        // Auto-fill with remaining amount
+        const remaining = parseFloat((invoice as any).remainingAmount || invoice.totalEgp);
+        setAmount(remaining.toFixed(2));
+      }
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1999,6 +2020,7 @@ function PaymentDialog({
       amountEgp: parseFloat(amount),
       paymentMethod,
       notes: notes || null,
+      invoiceId: selectedInvoiceId ? parseInt(selectedInvoiceId) : null,
     });
   };
 
@@ -2007,6 +2029,7 @@ function PaymentDialog({
     setAmount("");
     setPaymentMethod("cash");
     setNotes("");
+    setSelectedInvoiceId("");
   };
 
   return (
@@ -2017,11 +2040,65 @@ function PaymentDialog({
         onOpenChange(val);
       }}
     >
-      <DialogContent className="max-w-md" dir="rtl">
+      <DialogContent className="max-w-lg" dir="rtl">
         <DialogHeader>
           <DialogTitle>سداد جديد - {partyName}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Invoice Selection */}
+          <div className="space-y-2">
+            <Label>ربط بفاتورة (اختياري)</Label>
+            <Select value={selectedInvoiceId} onValueChange={handleInvoiceChange}>
+              <SelectTrigger>
+                <SelectValue placeholder="اختر فاتورة للربط" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">بدون ربط بفاتورة</SelectItem>
+                {unpaidInvoices.map((invoice: any) => (
+                  <SelectItem key={invoice.id} value={invoice.id.toString()}>
+                    <div className="flex justify-between items-center gap-4 w-full">
+                      <span>{invoice.referenceNumber}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {invoice.invoiceKind === 'purchase' ? 'شراء' : 'بيع'} | 
+                        الإجمالي: {formatCurrency(invoice.totalEgp)} | 
+                        المتبقي: {formatCurrency((invoice as any).remainingAmount || invoice.totalEgp)} ج.م
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {unpaidInvoices.length === 0 && (
+              <p className="text-xs text-muted-foreground">لا توجد فواتير مستحقة</p>
+            )}
+          </div>
+
+          {/* Selected invoice summary */}
+          {selectedInvoiceId && (
+            <div className="bg-muted/50 p-3 rounded-lg text-sm space-y-1">
+              {(() => {
+                const invoice = unpaidInvoices.find((inv: any) => inv.id.toString() === selectedInvoiceId);
+                if (!invoice) return null;
+                return (
+                  <>
+                    <div className="flex justify-between">
+                      <span>إجمالي الفاتورة:</span>
+                      <span className="font-mono">{formatCurrency(invoice.totalEgp)} ج.م</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>المدفوع:</span>
+                      <span className="font-mono text-green-600">{formatCurrency((invoice as any).paidAmount || '0')} ج.م</span>
+                    </div>
+                    <div className="flex justify-between font-medium">
+                      <span>المتبقي:</span>
+                      <span className="font-mono text-orange-600">{formatCurrency((invoice as any).remainingAmount || invoice.totalEgp)} ج.م</span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="paymentDate">التاريخ</Label>
             <Input

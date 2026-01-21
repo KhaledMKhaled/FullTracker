@@ -2791,7 +2791,8 @@ export async function registerRoutes(
       if (req.query.status && typeof req.query.status === "string") {
         filters.status = req.query.status;
       }
-      const invoices = await routeStorage.getAllLocalInvoices(filters);
+      // Use the new function that includes payment info
+      const invoices = await routeStorage.getAllLocalInvoicesWithPayments(filters);
       res.json(invoices);
     } catch (error) {
       console.error("Error fetching invoices:", error);

@@ -3824,6 +3824,71 @@ export class DatabaseStorage implements IStorage {
     return query.orderBy(desc(localInvoices.createdAt));
   }
 
+  async getAllLocalInvoicesWithPayments(filters?: { partyId?: number; invoiceKind?: string; status?: string }): Promise<(LocalInvoice & { paidAmount: string; remainingAmount: string; paymentStatus: string })[]> {
+    const conditions: any[] = [];
+
+    if (filters?.partyId) {
+      conditions.push(eq(localInvoices.partyId, filters.partyId));
+    }
+    if (filters?.invoiceKind) {
+      conditions.push(eq(localInvoices.invoiceKind, filters.invoiceKind));
+    }
+    if (filters?.status) {
+      conditions.push(eq(localInvoices.status, filters.status));
+    }
+
+    // Get invoices with aggregated payment amounts
+    const invoicesQuery = db
+      .select({
+        invoice: localInvoices,
+        paidAmount: sql<string>`COALESCE(SUM(${localPayments.amountEgp}), 0)`,
+      })
+      .from(localInvoices)
+      .leftJoin(localPayments, eq(localInvoices.id, localPayments.invoiceId))
+      .groupBy(localInvoices.id)
+      .orderBy(desc(localInvoices.createdAt));
+
+    if (conditions.length > 0) {
+      const results = await (invoicesQuery.where(and(...conditions)) as any);
+      return results.map((row: any) => {
+        const totalAmount = parseFloat(row.invoice.totalEgp || '0');
+        const paidAmount = parseFloat(row.paidAmount || '0');
+        const remainingAmount = totalAmount - paidAmount;
+        let paymentStatus = 'unpaid';
+        if (paidAmount >= totalAmount && totalAmount > 0) {
+          paymentStatus = 'paid';
+        } else if (paidAmount > 0) {
+          paymentStatus = 'partial';
+        }
+        return {
+          ...row.invoice,
+          paidAmount: paidAmount.toFixed(2),
+          remainingAmount: remainingAmount.toFixed(2),
+          paymentStatus,
+        };
+      });
+    }
+
+    const results = await invoicesQuery;
+    return results.map((row: any) => {
+      const totalAmount = parseFloat(row.invoice.totalEgp || '0');
+      const paidAmount = parseFloat(row.paidAmount || '0');
+      const remainingAmount = totalAmount - paidAmount;
+      let paymentStatus = 'unpaid';
+      if (paidAmount >= totalAmount && totalAmount > 0) {
+        paymentStatus = 'paid';
+      } else if (paidAmount > 0) {
+        paymentStatus = 'partial';
+      }
+      return {
+        ...row.invoice,
+        paidAmount: paidAmount.toFixed(2),
+        remainingAmount: remainingAmount.toFixed(2),
+        paymentStatus,
+      };
+    });
+  }
+
   async getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice; lines: LocalInvoiceLine[] } | undefined> {
     const [invoice] = await db.select().from(localInvoices).where(eq(localInvoices.id, id));
     if (!invoice) return undefined;
