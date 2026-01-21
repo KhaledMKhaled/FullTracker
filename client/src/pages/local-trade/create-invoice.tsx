@@ -106,8 +106,11 @@ export default function CreateInvoicePage() {
   const [referenceNumber, setReferenceNumber] = useState("");
   const [lines, setLines] = useState<InvoiceLineItem[]>([createEmptyLine()]);
 
-  const partyType = invoiceType === "purchase" ? "merchant" : "customer";
-  const { data: parties } = useParties({ type: partyType });
+  // For purchase: show merchants + both; For sale: show customers + both
+  const primaryPartyType = invoiceType === "purchase" ? "merchant" : "customer";
+  const { data: primaryParties } = useParties({ type: primaryPartyType });
+  const { data: bothParties } = useParties({ type: "both" });
+  const parties = [...(primaryParties || []), ...(bothParties || [])];
 
   // Reset partyId when invoice type changes
   const handleInvoiceTypeChange = (type: "purchase" | "sale") => {

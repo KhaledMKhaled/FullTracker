@@ -48,6 +48,11 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Added Third Party Type "بيع و اشتري منهم"
+  - New party type "both" allows executing purchase and sale transactions with same party
+  - Available alongside existing "تاجر" (merchant) and "عميل" (customer) types
+  - "Both" type parties appear in both purchase and sale invoice creation dropdowns
+  - Updated party creation/edit dialogs and profile pages
 - **January 2026**: Per-Line Invoice Receiving with Automatic Margin Cases
   - Per-line quantity input: Enter actual received quantity for each line item
   - Automatic shortage detection: System calculates difference between ordered and received
