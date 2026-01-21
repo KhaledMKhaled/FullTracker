@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -10,6 +10,7 @@ import {
   Trash2,
   Camera,
   CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -755,19 +756,52 @@ function ReceiveInvoiceDialog({
 }: ReceiveInvoiceDialogProps) {
   const { data: invoice } = useLocalInvoice(invoiceId || 0);
   const [notes, setNotes] = useState("");
+  const [lineReceipts, setLineReceipts] = useState<Record<number, number>>({});
 
   const invoiceData = invoice as { invoice: Invoice; lines: InvoiceLine[] } | undefined;
   const inv = invoiceData?.invoice;
   const lines = invoiceData?.lines || [];
 
+  // Initialize lineReceipts when lines change
+  useEffect(() => {
+    if (lines.length > 0 && Object.keys(lineReceipts).length === 0) {
+      const initialReceipts: Record<number, number> = {};
+      lines.forEach(line => {
+        if (line.id !== undefined) {
+          initialReceipts[line.id] = line.totalPieces;
+        }
+      });
+      setLineReceipts(initialReceipts);
+    }
+  }, [lines]);
+
+  const handleLineReceiptChange = (lineId: number, value: number, maxValue: number) => {
+    const clampedValue = Math.max(0, Math.min(value, maxValue));
+    setLineReceipts(prev => ({ ...prev, [lineId]: clampedValue }));
+  };
+
   const handleSubmit = () => {
     if (!lines.length) return;
-    onSubmit({ notes: notes || null });
+    const receiptsArray = Object.entries(lineReceipts).map(([lineId, receivedPieces]) => ({
+      lineId: parseInt(lineId),
+      receivedPieces,
+    }));
+    onSubmit({ notes: notes || null, lineReceipts: receiptsArray });
   };
 
   const resetForm = () => {
     setNotes("");
+    setLineReceipts({});
   };
+
+  // Calculate totals based on received quantities
+  const totalShortage = lines.reduce((sum, line) => {
+    if (line.id === undefined) return sum;
+    const received = lineReceipts[line.id] ?? line.totalPieces;
+    return sum + (line.totalPieces - received);
+  }, 0);
+
+  const hasShortages = totalShortage > 0;
 
   const totalCartons = lines.reduce((sum, l) => sum + (l.cartons || 0), 0);
   const totalPieces = lines.reduce((sum, l) => sum + (l.totalPieces || 0), 0);
@@ -831,78 +865,107 @@ function ReceiveInvoiceDialog({
               </Card>
             </div>
 
+            {hasShortages && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800">
+                <AlertTriangle className="w-5 h-5" />
+                <span>سيتم إنشاء {totalShortage} قيد هامش تلقائياً للنواقص</span>
+              </div>
+            )}
+
             <div className="space-y-3">
-              <Label className="font-semibold">بنود الفاتورة</Label>
+              <Label className="font-semibold">بنود الفاتورة - أدخل الكمية المستلمة لكل بند</Label>
               
-              {lines.map((line, index) => (
-                <div key={line.id || index} className="grid grid-cols-12 gap-3 p-4 border rounded-lg items-center bg-card">
-                  <div className="col-span-1">
-                    <HoverCard>
-                      <HoverCardTrigger asChild>
-                        <div className="w-14 h-14 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
-                          {line.imageUrl ? (
+              {lines.filter(line => line.id !== undefined).map((line, index) => {
+                const lineId = line.id as number;
+                const receivedQty = lineReceipts[lineId] ?? line.totalPieces;
+                const shortage = line.totalPieces - receivedQty;
+                const isFullyReceived = shortage === 0;
+                const lineHasShortage = shortage > 0;
+                
+                return (
+                  <div 
+                    key={line.id || index} 
+                    className={`grid grid-cols-12 gap-3 p-4 border rounded-lg items-center ${
+                      lineHasShortage ? "bg-destructive/5 border-destructive/30" : "bg-card"
+                    }`}
+                  >
+                    <div className="col-span-1">
+                      <HoverCard>
+                        <HoverCardTrigger asChild>
+                          <div className="w-14 h-14 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
+                            {line.imageUrl ? (
+                              <img
+                                src={line.imageUrl}
+                                className="w-full h-full object-cover"
+                                alt={line.productName}
+                              />
+                            ) : (
+                              <Camera className="w-5 h-5 text-muted-foreground" />
+                            )}
+                          </div>
+                        </HoverCardTrigger>
+                        {line.imageUrl && (
+                          <HoverCardContent className="w-72 p-2">
                             <img
                               src={line.imageUrl}
-                              className="w-full h-full object-cover"
+                              className="w-full h-64 object-contain rounded"
                               alt={line.productName}
                             />
-                          ) : (
-                            <Camera className="w-5 h-5 text-muted-foreground" />
-                          )}
+                          </HoverCardContent>
+                        )}
+                      </HoverCard>
+                    </div>
+
+                    <div className="col-span-2">
+                      <Label className="text-xs text-muted-foreground">اسم المنتج</Label>
+                      <p className="font-medium truncate">{line.productName}</p>
+                    </div>
+
+                    <div className="col-span-1 text-center">
+                      <Label className="text-xs text-muted-foreground">المطلوب</Label>
+                      <p className="font-mono font-medium">{line.totalPieces} قطعة</p>
+                    </div>
+
+                    <div className="col-span-2">
+                      <Label className="text-xs text-muted-foreground">الكمية المستلمة</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={line.totalPieces}
+                        value={receivedQty}
+                        onChange={(e) => handleLineReceiptChange(lineId, parseInt(e.target.value) || 0, line.totalPieces)}
+                        className={`text-center font-mono ${lineHasShortage ? "border-destructive" : ""}`}
+                      />
+                    </div>
+
+                    <div className="col-span-2 text-center">
+                      <Label className="text-xs text-muted-foreground">النواقص</Label>
+                      <p className={`font-mono font-medium ${lineHasShortage ? "text-destructive" : "text-green-600"}`}>
+                        {lineHasShortage ? `${shortage} قطعة` : "لا يوجد"}
+                      </p>
+                    </div>
+
+                    <div className="col-span-2 text-center">
+                      <Label className="text-xs text-muted-foreground">سعر الوحدة</Label>
+                      <p className="font-mono">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
+                    </div>
+
+                    <div className="col-span-2 flex items-center justify-center gap-2">
+                      {isFullyReceived ? (
+                        <div className="flex items-center gap-1 text-green-600">
+                          <CheckCircle2 className="w-5 h-5" />
+                          <span className="text-sm font-medium">تمام</span>
                         </div>
-                      </HoverCardTrigger>
-                      {line.imageUrl && (
-                        <HoverCardContent className="w-72 p-2">
-                          <img
-                            src={line.imageUrl}
-                            className="w-full h-64 object-contain rounded"
-                            alt={line.productName}
-                          />
-                        </HoverCardContent>
+                      ) : (
+                        <div className="flex items-center gap-1 text-destructive">
+                          <AlertTriangle className="w-5 h-5" />
+                          <span className="text-sm font-medium">ناقص</span>
+                        </div>
                       )}
-                    </HoverCard>
+                    </div>
                   </div>
-
-                  <div className="col-span-3">
-                    <Label className="text-xs text-muted-foreground">اسم المنتج</Label>
-                    <p className="font-medium truncate">{line.productName}</p>
-                  </div>
-
-                  <div className="col-span-1 text-center">
-                    <Label className="text-xs text-muted-foreground">كراتين</Label>
-                    <p className="font-mono">{line.cartons || 0}</p>
-                  </div>
-
-                  <div className="col-span-1 text-center">
-                    <Label className="text-xs text-muted-foreground">قطع/كرتونة</Label>
-                    <p className="font-mono">{line.piecesPerCarton || 0}</p>
-                  </div>
-
-                  <div className="col-span-2 text-center">
-                    <Label className="text-xs text-muted-foreground">
-                      {line.unitMode === "dozen" ? "الدست" : "القطع"}
-                    </Label>
-                    <p className="font-mono font-medium">
-                      {line.unitMode === "dozen" 
-                        ? `${parseFloat(line.totalDozens || "0").toFixed(2)} دستة`
-                        : `${line.totalPieces} قطعة`
-                      }
-                    </p>
-                  </div>
-
-                  <div className="col-span-2 text-center">
-                    <Label className="text-xs text-muted-foreground">سعر الوحدة</Label>
-                    <p className="font-mono">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
-                  </div>
-
-                  <div className="col-span-2 text-center">
-                    <Label className="text-xs text-muted-foreground">إجمالي البند</Label>
-                    <p className="font-mono font-bold text-primary">
-                      {parseFloat(line.lineTotalEgp || "0").toLocaleString("ar-EG")} ج.م
-                    </p>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="space-y-2">
