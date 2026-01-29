@@ -4553,7 +4553,8 @@ export class DatabaseStorage implements IStorage {
         eq(partyCollections.status, "pending")
       ));
 
-    const currentBalance = parseFloat(party[0].currentBalanceEgp || "0");
+    const balance = await this.getPartyBalance(partyId, targetSeasonId);
+    const signedBalance = balance.direction === 'debit' ? parseFloat(balance.balanceEgp) : -parseFloat(balance.balanceEgp);
 
     return {
       party: party[0],
@@ -4563,8 +4564,8 @@ export class DatabaseStorage implements IStorage {
         invoicesCount: invoicesResult[0]?.count || 0,
         totalPaidEgp: paymentsResult[0]?.total || "0",
         paymentsCount: paymentsResult[0]?.count || 0,
-        remainingBalanceEgp: Math.max(0, currentBalance).toString(),
-        creditBalanceEgp: Math.abs(Math.min(0, currentBalance)).toString(),
+        remainingBalanceEgp: Math.max(0, signedBalance).toFixed(2),
+        creditBalanceEgp: Math.abs(Math.min(0, signedBalance)).toFixed(2),
         underInspectionEgp: pendingReturnsResult[0]?.total || "0",
         pendingReturnsCount: pendingReturnsResult[0]?.count || 0,
         upcomingCollectionsCount: upcomingCollections[0]?.count || 0,
