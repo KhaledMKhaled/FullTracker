@@ -21,6 +21,7 @@ import {
   AlertCircle,
   History,
   FileDown,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,6 +63,7 @@ import {
   usePartyProfile,
   usePartyProfileSummary,
   useUpdateParty,
+  useDeleteParty,
   useLocalInvoices,
   useLocalPayments,
   useReturnCases,
@@ -78,6 +80,7 @@ import {
   useCheckDueCollections,
   useMarkNotificationRead,
 } from "@/hooks/use-local-trade";
+import { useAuth } from "@/hooks/useAuth";
 import { getErrorMessage, queryClient } from "@/lib/queryClient";
 import { useQuery } from "@tanstack/react-query";
 import type { ProductType } from "@shared/schema";
@@ -257,6 +260,7 @@ export default function PartyProfilePage() {
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [isSettlementDialogOpen, setIsSettlementDialogOpen] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("all");
   const [invoiceKindFilter, setInvoiceKindFilter] = useState<string>("all");
@@ -299,7 +303,11 @@ export default function PartyProfilePage() {
     }
   }, [partyId]);
   
+  const { user } = useAuth();
+  const isAdmin = user?.role === "مدير";
+  
   const updateMutation = useUpdateParty();
+  const deletePartyMutation = useDeleteParty();
   const createPaymentMutation = useCreateLocalPayment();
   const createSettlementMutation = useCreateSettlement();
   const createInvoiceMutation = useCreateLocalInvoice();
@@ -491,6 +499,12 @@ export default function PartyProfilePage() {
               <Edit className="w-4 h-4 ml-1" />
               تعديل
             </Button>
+            {isAdmin && (
+              <Button size="sm" variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
+                <Trash2 className="w-4 h-4 ml-1" />
+                حذف
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -672,6 +686,42 @@ export default function PartyProfilePage() {
         }}
         isLoading={updateMutation.isPending}
       />
+
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent dir="rtl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="w-5 h-5" />
+              حذف الملف
+            </DialogTitle>
+            <DialogDescription>
+              هل أنت متأكد من حذف ملف "{partyData.name}"؟ سيتم حذف جميع البيانات المرتبطة به (الفواتير، المدفوعات، الهوامش، إلخ). هذا الإجراء لا يمكن التراجع عنه.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
+              إلغاء
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                deletePartyMutation.mutate(partyId, {
+                  onSuccess: () => {
+                    toast({ title: "تم حذف الملف بنجاح" });
+                    navigate("/local-trade/parties");
+                  },
+                  onError: (error) => {
+                    toast({ title: getErrorMessage(error), variant: "destructive" });
+                  },
+                });
+              }}
+              disabled={deletePartyMutation.isPending}
+            >
+              {deletePartyMutation.isPending ? "جاري الحذف..." : "تأكيد الحذف"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <PaymentDialog
         open={isPaymentDialogOpen}

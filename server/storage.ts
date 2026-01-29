@@ -895,6 +895,7 @@ export interface IStorage {
   getParty(id: number): Promise<Party | undefined>;
   createParty(data: InsertParty): Promise<Party>;
   updateParty(id: number, data: Partial<InsertParty>): Promise<Party | undefined>;
+  deleteParty(id: number): Promise<void>;
   getPartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }>;
   getPartyProfile(partyId: number): Promise<{
     party: Party;
@@ -3715,6 +3716,19 @@ export class DatabaseStorage implements IStorage {
       .where(eq(parties.id, id))
       .returning();
     return party;
+  }
+
+  async deleteParty(id: number): Promise<void> {
+    await db.delete(partyLedgerEntries).where(eq(partyLedgerEntries.partyId, id));
+    await db.delete(localPayments).where(eq(localPayments.partyId, id));
+    await db.delete(localInvoiceLines).where(
+      sql`invoice_id IN (SELECT id FROM local_invoices WHERE party_id = ${id})`
+    );
+    await db.delete(localInvoices).where(eq(localInvoices.partyId, id));
+    await db.delete(returnCases).where(eq(returnCases.partyId, id));
+    await db.delete(partyCollections).where(eq(partyCollections.partyId, id));
+    await db.delete(partySeasons).where(eq(partySeasons.partyId, id));
+    await db.delete(parties).where(eq(parties.id, id));
   }
 
   async getPartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }> {

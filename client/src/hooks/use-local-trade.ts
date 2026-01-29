@@ -86,6 +86,17 @@ export function useUpdateParty() {
   });
 }
 
+export function useDeleteParty() {
+  return useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/local-trade/parties/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
+    },
+  });
+}
+
 export function useLocalInvoices(filters?: InvoiceFilters) {
   const params = new URLSearchParams();
   if (filters?.partyId) params.set("partyId", String(filters.partyId));

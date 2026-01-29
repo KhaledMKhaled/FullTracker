@@ -2672,6 +2672,33 @@ export async function registerRoutes(
     }
   });
 
+  app.delete("/api/local-trade/parties/:id", requireRole(["مدير"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const userId = (req.user as any)?.id;
+      
+      const party = await routeStorage.getParty(id);
+      if (!party) {
+        return res.status(404).json({ message: "الملف غير موجود" });
+      }
+      
+      await routeStorage.deleteParty(id);
+      
+      auditLogger({
+        userId,
+        entityType: "PARTY",
+        entityId: String(id),
+        actionType: "DELETE",
+        details: { name: party.name, type: party.type },
+      });
+      
+      res.json({ success: true, message: "تم حذف الملف بنجاح" });
+    } catch (error) {
+      console.error("Error deleting party:", error);
+      res.status(500).json({ message: "خطأ في حذف الملف" });
+    }
+  });
+
   // Party Seasons Routes
   app.get("/api/local-trade/parties/:id/seasons", isAuthenticated, async (req, res) => {
     try {
