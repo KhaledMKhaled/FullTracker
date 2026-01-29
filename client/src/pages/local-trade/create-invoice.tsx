@@ -458,9 +458,10 @@ export default function CreateInvoicePage() {
 
         <div className="border rounded-lg overflow-hidden">
           <div className="grid grid-cols-24 gap-1 p-3 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+            <div className="col-span-1 text-center">#</div>
             <div className="col-span-2 text-center">صورة</div>
             <div className="col-span-3">النوع</div>
-            <div className="col-span-4">اسم المنتج</div>
+            <div className="col-span-3">اسم المنتج</div>
             <div className="col-span-2 text-center">كراتين</div>
             <div className="col-span-2 text-center">قطع/كرتونة</div>
             <div className="col-span-2 text-center">الوحدة</div>
@@ -473,6 +474,7 @@ export default function CreateInvoicePage() {
           {lines.map((line, index) => (
             <LineItemRow
               key={line.id}
+              lineNumber={index + 1}
               line={line}
               productTypes={productTypes}
               onUpdate={updateLine}
@@ -510,6 +512,7 @@ export default function CreateInvoicePage() {
 
 interface LineItemRowProps {
   line: InvoiceLineItem;
+  lineNumber: number;
   productTypes?: ProductType[];
   onUpdate: (id: string, updates: Partial<InvoiceLineItem>) => void;
   onRemove: (id: string) => void;
@@ -520,6 +523,7 @@ interface LineItemRowProps {
 
 function LineItemRow({
   line,
+  lineNumber,
   productTypes,
   onUpdate,
   onRemove,
@@ -529,6 +533,9 @@ function LineItemRow({
 }: LineItemRowProps) {
   return (
     <div className={`grid grid-cols-24 gap-1 p-3 items-center hover:bg-muted/30 ${!isLast ? 'border-b' : ''}`}>
+      <div className="col-span-1 text-center">
+        <span className="font-bold text-primary">{lineNumber}</span>
+      </div>
       <div className="col-span-2 flex justify-center">
         <HoverCard>
           <HoverCardTrigger asChild>
@@ -601,7 +608,7 @@ function LineItemRow({
         </Select>
       </div>
 
-      <div className="col-span-4">
+      <div className="col-span-3">
         <Input
           placeholder="اسم المنتج"
           value={line.productName}
