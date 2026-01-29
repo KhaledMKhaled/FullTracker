@@ -875,97 +875,105 @@ function ReceiveInvoiceDialog({
             <div className="space-y-3">
               <Label className="font-semibold">بنود الفاتورة - أدخل الكمية المستلمة لكل بند</Label>
               
-              {lines.filter(line => line.id !== undefined).map((line, index) => {
-                const lineId = line.id as number;
-                const receivedQty = lineReceipts[lineId] ?? line.totalPieces;
-                const shortage = line.totalPieces - receivedQty;
-                const isFullyReceived = shortage === 0;
-                const lineHasShortage = shortage > 0;
-                
-                return (
-                  <div 
-                    key={line.id || index} 
-                    className={`grid grid-cols-12 gap-3 p-4 border rounded-lg items-center ${
-                      lineHasShortage ? "bg-destructive/5 border-destructive/30" : "bg-card"
-                    }`}
-                  >
-                    <div className="col-span-1">
-                      <HoverCard>
-                        <HoverCardTrigger asChild>
-                          <div className="w-14 h-14 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
-                            {line.imageUrl ? (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 p-3 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+                  <div className="col-span-1 text-center">صورة</div>
+                  <div className="col-span-2">اسم المنتج</div>
+                  <div className="col-span-1 text-center">المطلوب</div>
+                  <div className="col-span-2 text-center">المستلم</div>
+                  <div className="col-span-2 text-center">النواقص</div>
+                  <div className="col-span-2 text-center">سعر الوحدة</div>
+                  <div className="col-span-2 text-center">الحالة</div>
+                </div>
+
+                {lines.filter(line => line.id !== undefined).map((line, index, filteredLines) => {
+                  const lineId = line.id as number;
+                  const receivedQty = lineReceipts[lineId] ?? line.totalPieces;
+                  const shortage = line.totalPieces - receivedQty;
+                  const isFullyReceived = shortage === 0;
+                  const lineHasShortage = shortage > 0;
+                  const isLast = index === filteredLines.length - 1;
+                  
+                  return (
+                    <div 
+                      key={line.id || index} 
+                      className={`grid grid-cols-12 gap-2 p-3 items-center ${!isLast ? 'border-b' : ''} ${
+                        lineHasShortage ? "bg-destructive/5" : "hover:bg-muted/30"
+                      }`}
+                    >
+                      <div className="col-span-1 flex justify-center">
+                        <HoverCard>
+                          <HoverCardTrigger asChild>
+                            <div className="w-10 h-10 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
+                              {line.imageUrl ? (
+                                <img
+                                  src={line.imageUrl}
+                                  className="w-full h-full object-cover"
+                                  alt={line.productName}
+                                />
+                              ) : (
+                                <Camera className="w-4 h-4 text-muted-foreground" />
+                              )}
+                            </div>
+                          </HoverCardTrigger>
+                          {line.imageUrl && (
+                            <HoverCardContent className="w-64 p-2">
                               <img
                                 src={line.imageUrl}
-                                className="w-full h-full object-cover"
+                                className="w-full h-48 object-contain rounded"
                                 alt={line.productName}
                               />
-                            ) : (
-                              <Camera className="w-5 h-5 text-muted-foreground" />
-                            )}
+                            </HoverCardContent>
+                          )}
+                        </HoverCard>
+                      </div>
+
+                      <div className="col-span-2">
+                        <p className="font-medium text-sm truncate">{line.productName}</p>
+                      </div>
+
+                      <div className="col-span-1 text-center">
+                        <p className="font-mono text-sm font-medium">{line.totalPieces}</p>
+                      </div>
+
+                      <div className="col-span-2">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={line.totalPieces}
+                          value={receivedQty}
+                          onChange={(e) => handleLineReceiptChange(lineId, parseInt(e.target.value) || 0, line.totalPieces)}
+                          className={`h-9 text-sm text-center font-mono ${lineHasShortage ? "border-destructive" : ""}`}
+                        />
+                      </div>
+
+                      <div className="col-span-2 text-center">
+                        <p className={`font-mono text-sm font-medium ${lineHasShortage ? "text-destructive" : "text-green-600"}`}>
+                          {lineHasShortage ? shortage : "0"}
+                        </p>
+                      </div>
+
+                      <div className="col-span-2 text-center">
+                        <p className="font-mono text-sm">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")}</p>
+                      </div>
+
+                      <div className="col-span-2 flex justify-center">
+                        {isFullyReceived ? (
+                          <div className="flex items-center gap-1 text-green-600">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span className="text-xs font-medium">تمام</span>
                           </div>
-                        </HoverCardTrigger>
-                        {line.imageUrl && (
-                          <HoverCardContent className="w-72 p-2">
-                            <img
-                              src={line.imageUrl}
-                              className="w-full h-64 object-contain rounded"
-                              alt={line.productName}
-                            />
-                          </HoverCardContent>
+                        ) : (
+                          <div className="flex items-center gap-1 text-destructive">
+                            <AlertTriangle className="w-4 h-4" />
+                            <span className="text-xs font-medium">ناقص</span>
+                          </div>
                         )}
-                      </HoverCard>
+                      </div>
                     </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">اسم المنتج</Label>
-                      <p className="font-medium truncate">{line.productName}</p>
-                    </div>
-
-                    <div className="col-span-1 text-center">
-                      <Label className="text-xs text-muted-foreground">المطلوب</Label>
-                      <p className="font-mono font-medium">{line.totalPieces} قطعة</p>
-                    </div>
-
-                    <div className="col-span-2">
-                      <Label className="text-xs text-muted-foreground">الكمية المستلمة</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        max={line.totalPieces}
-                        value={receivedQty}
-                        onChange={(e) => handleLineReceiptChange(lineId, parseInt(e.target.value) || 0, line.totalPieces)}
-                        className={`text-center font-mono ${lineHasShortage ? "border-destructive" : ""}`}
-                      />
-                    </div>
-
-                    <div className="col-span-2 text-center">
-                      <Label className="text-xs text-muted-foreground">النواقص</Label>
-                      <p className={`font-mono font-medium ${lineHasShortage ? "text-destructive" : "text-green-600"}`}>
-                        {lineHasShortage ? `${shortage} قطعة` : "لا يوجد"}
-                      </p>
-                    </div>
-
-                    <div className="col-span-2 text-center">
-                      <Label className="text-xs text-muted-foreground">سعر الوحدة</Label>
-                      <p className="font-mono">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
-                    </div>
-
-                    <div className="col-span-2 flex items-center justify-center gap-2">
-                      {isFullyReceived ? (
-                        <div className="flex items-center gap-1 text-green-600">
-                          <CheckCircle2 className="w-5 h-5" />
-                          <span className="text-sm font-medium">تمام</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1 text-destructive">
-                          <AlertTriangle className="w-5 h-5" />
-                          <span className="text-sm font-medium">ناقص</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
             <div className="space-y-2">
@@ -1098,75 +1106,82 @@ function ViewInvoiceDialog({ open, onOpenChange, invoiceId }: ViewInvoiceDialogP
             <div className="space-y-3">
               <Label className="font-semibold">بنود الفاتورة</Label>
               
-              {lines.map((line, index) => (
-                <div key={line.id || index} className="grid grid-cols-12 gap-3 p-4 border rounded-lg items-center bg-card">
-                  <div className="col-span-1">
-                    <HoverCard>
-                      <HoverCardTrigger asChild>
-                        <div className="w-14 h-14 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
-                          {line.imageUrl ? (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 p-3 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+                  <div className="col-span-1 text-center">صورة</div>
+                  <div className="col-span-3">اسم المنتج</div>
+                  <div className="col-span-1 text-center">كراتين</div>
+                  <div className="col-span-1 text-center">قطع/كرتونة</div>
+                  <div className="col-span-2 text-center">الكمية</div>
+                  <div className="col-span-2 text-center">سعر الوحدة</div>
+                  <div className="col-span-2 text-center">الإجمالي</div>
+                </div>
+
+                {lines.map((line, index) => (
+                  <div key={line.id || index} className={`grid grid-cols-12 gap-2 p-3 items-center hover:bg-muted/30 ${index !== lines.length - 1 ? 'border-b' : ''}`}>
+                    <div className="col-span-1 flex justify-center">
+                      <HoverCard>
+                        <HoverCardTrigger asChild>
+                          <div className="w-10 h-10 border rounded-lg overflow-hidden cursor-pointer bg-muted/50 flex items-center justify-center">
+                            {line.imageUrl ? (
+                              <img
+                                src={line.imageUrl}
+                                className="w-full h-full object-cover"
+                                alt={line.productName}
+                              />
+                            ) : (
+                              <Camera className="w-4 h-4 text-muted-foreground" />
+                            )}
+                          </div>
+                        </HoverCardTrigger>
+                        {line.imageUrl && (
+                          <HoverCardContent className="w-64 p-2">
                             <img
                               src={line.imageUrl}
-                              className="w-full h-full object-cover"
+                              className="w-full h-48 object-contain rounded"
                               alt={line.productName}
                             />
-                          ) : (
-                            <Camera className="w-5 h-5 text-muted-foreground" />
-                          )}
-                        </div>
-                      </HoverCardTrigger>
-                      {line.imageUrl && (
-                        <HoverCardContent className="w-72 p-2">
-                          <img
-                            src={line.imageUrl}
-                            className="w-full h-64 object-contain rounded"
-                            alt={line.productName}
-                          />
-                        </HoverCardContent>
+                          </HoverCardContent>
+                        )}
+                      </HoverCard>
+                    </div>
+
+                    <div className="col-span-3">
+                      <p className="font-medium text-sm truncate">{line.productName}</p>
+                      {line.productTypeName && (
+                        <p className="text-xs text-muted-foreground">{line.productTypeName}</p>
                       )}
-                    </HoverCard>
-                  </div>
+                    </div>
 
-                  <div className="col-span-3">
-                    <Label className="text-xs text-muted-foreground">اسم المنتج</Label>
-                    <p className="font-medium truncate">{line.productName}</p>
-                  </div>
+                    <div className="col-span-1 text-center">
+                      <p className="font-mono text-sm">{line.cartons || 0}</p>
+                    </div>
 
-                  <div className="col-span-1 text-center">
-                    <Label className="text-xs text-muted-foreground">كراتين</Label>
-                    <p className="font-mono">{line.cartons || 0}</p>
-                  </div>
+                    <div className="col-span-1 text-center">
+                      <p className="font-mono text-sm">{line.piecesPerCarton || 0}</p>
+                    </div>
 
-                  <div className="col-span-1 text-center">
-                    <Label className="text-xs text-muted-foreground">قطع/كرتونة</Label>
-                    <p className="font-mono">{line.piecesPerCarton || 0}</p>
-                  </div>
+                    <div className="col-span-2 text-center">
+                      <p className="font-mono text-sm font-medium">
+                        {line.unitMode === "dozen" 
+                          ? `${parseFloat(line.totalDozens || "0").toFixed(1)} دستة`
+                          : `${line.totalPieces} قطعة`
+                        }
+                      </p>
+                    </div>
 
-                  <div className="col-span-2 text-center">
-                    <Label className="text-xs text-muted-foreground">
-                      {line.unitMode === "dozen" ? "الدست" : "القطع"}
-                    </Label>
-                    <p className="font-mono font-medium">
-                      {line.unitMode === "dozen" 
-                        ? `${parseFloat(line.totalDozens || "0").toFixed(2)} دستة`
-                        : `${line.totalPieces} قطعة`
-                      }
-                    </p>
-                  </div>
+                    <div className="col-span-2 text-center">
+                      <p className="font-mono text-sm">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
+                    </div>
 
-                  <div className="col-span-2 text-center">
-                    <Label className="text-xs text-muted-foreground">سعر الوحدة</Label>
-                    <p className="font-mono">{parseFloat(line.unitPriceEgp || "0").toLocaleString("ar-EG")} ج.م</p>
+                    <div className="col-span-2 text-center">
+                      <p className="font-mono text-sm font-bold text-primary">
+                        {parseFloat(line.lineTotalEgp || "0").toLocaleString("ar-EG")} ج.م
+                      </p>
+                    </div>
                   </div>
-
-                  <div className="col-span-2 text-center">
-                    <Label className="text-xs text-muted-foreground">إجمالي البند</Label>
-                    <p className="font-mono font-bold text-primary">
-                      {parseFloat(line.lineTotalEgp || "0").toLocaleString("ar-EG")} ج.م
-                    </p>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             <div className="flex justify-end">

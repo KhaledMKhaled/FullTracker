@@ -443,17 +443,33 @@ export default function CreateInvoicePage() {
       <div className="space-y-3 mt-6">
         <h2 className="font-semibold text-lg">بنود الفاتورة</h2>
 
-        {lines.map((line) => (
-          <LineItemRow
-            key={line.id}
-            line={line}
-            productTypes={productTypes}
-            onUpdate={updateLine}
-            onRemove={removeLine}
-            onImageChange={handleImageUpload}
-            canDelete={lines.length > 1}
-          />
-        ))}
+        <div className="border rounded-lg overflow-hidden">
+          <div className="grid grid-cols-12 gap-2 p-3 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+            <div className="col-span-1 text-center">صورة</div>
+            <div className="col-span-2">نوع المنتج</div>
+            <div className="col-span-2">اسم المنتج</div>
+            <div className="col-span-1 text-center">كراتين</div>
+            <div className="col-span-1 text-center">قطع/كرتونة</div>
+            <div className="col-span-1 text-center">الوحدة</div>
+            <div className="col-span-1 text-center">إجمالي</div>
+            <div className="col-span-1 text-center">السعر</div>
+            <div className="col-span-1 text-center">المجموع</div>
+            <div className="col-span-1"></div>
+          </div>
+
+          {lines.map((line, index) => (
+            <LineItemRow
+              key={line.id}
+              line={line}
+              productTypes={productTypes}
+              onUpdate={updateLine}
+              onRemove={removeLine}
+              onImageChange={handleImageUpload}
+              canDelete={lines.length > 1}
+              isLast={index === lines.length - 1}
+            />
+          ))}
+        </div>
       </div>
 
       <div className="sticky bottom-0 bg-background border-t py-4 -mx-6 px-6 flex items-center justify-between">
@@ -486,6 +502,7 @@ interface LineItemRowProps {
   onRemove: (id: string) => void;
   onImageChange: (id: string, file: File | undefined) => void;
   canDelete: boolean;
+  isLast?: boolean;
 }
 
 function LineItemRow({
@@ -495,16 +512,17 @@ function LineItemRow({
   onRemove,
   onImageChange,
   canDelete,
+  isLast,
 }: LineItemRowProps) {
   return (
-    <div className="grid grid-cols-12 gap-3 p-4 border rounded-lg items-start">
-      <div className="col-span-1">
+    <div className={`grid grid-cols-12 gap-2 p-3 items-center hover:bg-muted/30 ${!isLast ? 'border-b' : ''}`}>
+      <div className="col-span-1 flex justify-center">
         <HoverCard>
           <HoverCardTrigger asChild>
-            <div className="relative w-16 h-16 border-2 border-dashed rounded-lg overflow-hidden cursor-pointer hover:border-primary group">
+            <div className="relative w-12 h-12 border-2 border-dashed rounded-lg overflow-hidden cursor-pointer hover:border-primary">
               {line.isUploadingImage && (
                 <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-10">
-                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                 </div>
               )}
               {line.imagePreview ? (
@@ -515,7 +533,7 @@ function LineItemRow({
                 />
               ) : (
                 <div className="flex items-center justify-center h-full bg-muted/50">
-                  <Camera className="w-6 h-6 text-muted-foreground" />
+                  <Camera className="w-4 h-4 text-muted-foreground" />
                 </div>
               )}
               <input
@@ -526,20 +544,20 @@ function LineItemRow({
                 disabled={line.isUploadingImage}
               />
               {line.imageUrl && !line.isUploadingImage && (
-                <div className="absolute top-1 right-1 w-3 h-3 bg-green-500 rounded-full border border-white"></div>
+                <div className="absolute top-0.5 right-0.5 w-2 h-2 bg-green-500 rounded-full border border-white"></div>
               )}
             </div>
           </HoverCardTrigger>
           {line.imagePreview && (
-            <HoverCardContent className="w-72 p-2">
+            <HoverCardContent className="w-64 p-2">
               <div className="space-y-2">
                 <img
                   src={line.imagePreview}
-                  className="w-full h-64 object-contain rounded"
+                  className="w-full h-48 object-contain rounded"
                   alt="Product Preview"
                 />
                 {line.imageUrl && (
-                  <div className="text-xs text-green-600">✓ تم رفع الصورة بنجاح</div>
+                  <div className="text-xs text-green-600">تم رفع الصورة</div>
                 )}
                 {line.imageUploadError && (
                   <div className="text-xs text-red-600">{line.imageUploadError}</div>
@@ -551,14 +569,13 @@ function LineItemRow({
       </div>
 
       <div className="col-span-2">
-        <Label className="text-xs">نوع المنتج</Label>
         <Select
           value={line.productTypeId?.toString() || ""}
           onValueChange={(val) =>
             onUpdate(line.id, { productTypeId: val ? Number(val) : null })
           }
         >
-          <SelectTrigger>
+          <SelectTrigger className="h-9 text-sm">
             <SelectValue placeholder="اختر النوع" />
           </SelectTrigger>
           <SelectContent>
@@ -572,16 +589,15 @@ function LineItemRow({
       </div>
 
       <div className="col-span-2">
-        <Label className="text-xs">اسم المنتج *</Label>
         <Input
           placeholder="اسم المنتج"
           value={line.productName}
           onChange={(e) => onUpdate(line.id, { productName: e.target.value })}
+          className="h-9 text-sm"
         />
       </div>
 
       <div className="col-span-1">
-        <Label className="text-xs">عدد الكراتين</Label>
         <Input
           type="number"
           min="0"
@@ -589,11 +605,11 @@ function LineItemRow({
           onChange={(e) =>
             onUpdate(line.id, { cartons: Number(e.target.value) || 0 })
           }
+          className="h-9 text-sm text-center"
         />
       </div>
 
       <div className="col-span-1">
-        <Label className="text-xs">قطع/كرتونة</Label>
         <Input
           type="number"
           min="0"
@@ -601,49 +617,36 @@ function LineItemRow({
           onChange={(e) =>
             onUpdate(line.id, { piecesPerCarton: Number(e.target.value) || 0 })
           }
+          className="h-9 text-sm text-center"
         />
       </div>
 
       <div className="col-span-1">
-        <Label className="text-xs">وحدة البيع</Label>
         <Select
           value={line.unitMode}
           onValueChange={(val: "piece" | "dozen") =>
             onUpdate(line.id, { unitMode: val })
           }
         >
-          <SelectTrigger>
+          <SelectTrigger className="h-9 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="piece">القطعة</SelectItem>
-            <SelectItem value="dozen">الدستة</SelectItem>
+            <SelectItem value="piece">قطعة</SelectItem>
+            <SelectItem value="dozen">دستة</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      {line.unitMode === "dozen" ? (
-        <div className="col-span-1">
-          <Label className="text-xs">إجمالي الدست</Label>
-          <Input
-            value={line.totalDozens.toFixed(2)}
-            disabled
-            className="bg-muted"
-          />
-        </div>
-      ) : (
-        <div className="col-span-1">
-          <Label className="text-xs">إجمالي القطع</Label>
-          <Input
-            value={line.totalPieces.toLocaleString("ar-EG")}
-            disabled
-            className="bg-muted"
-          />
-        </div>
-      )}
+      <div className="col-span-1">
+        <Input
+          value={line.unitMode === "dozen" ? line.totalDozens.toFixed(1) : line.totalPieces.toLocaleString("ar-EG")}
+          disabled
+          className="h-9 text-sm text-center bg-muted/50"
+        />
+      </div>
 
       <div className="col-span-1">
-        <Label className="text-xs">سعر الوحدة</Label>
         <Input
           type="number"
           step="0.01"
@@ -652,24 +655,25 @@ function LineItemRow({
           onChange={(e) =>
             onUpdate(line.id, { unitPriceEgp: Number(e.target.value) || 0 })
           }
+          className="h-9 text-sm text-center"
         />
       </div>
 
       <div className="col-span-1">
-        <Label className="text-xs">إجمالي البند</Label>
         <Input
-          value={line.lineTotal.toFixed(2)}
+          value={line.lineTotal.toLocaleString("ar-EG", { minimumFractionDigits: 2 })}
           disabled
-          className="bg-muted font-bold"
+          className="h-9 text-sm text-center bg-primary/10 font-bold text-primary"
         />
       </div>
 
-      <div className="col-span-1 flex items-end pb-1">
+      <div className="col-span-1 flex justify-center">
         <Button
           variant="ghost"
-          size="icon"
+          size="sm"
           onClick={() => onRemove(line.id)}
           disabled={!canDelete}
+          className="h-9 w-9 p-0"
         >
           <Trash2 className="w-4 h-4 text-destructive" />
         </Button>
