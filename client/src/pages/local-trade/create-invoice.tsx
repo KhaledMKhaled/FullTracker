@@ -329,12 +329,24 @@ export default function CreateInvoicePage() {
     createMutation.mutate(invoiceData, {
       onSuccess: () => {
         toast({ title: "تم إنشاء الفاتورة بنجاح" });
-        navigate("/local-trade/invoices");
+        if (partyId) {
+          navigate(`/local-trade/parties/${partyId}`);
+        } else {
+          navigate("/local-trade/invoices");
+        }
       },
       onError: (error) => {
         toast({ title: getErrorMessage(error), variant: "destructive" });
       },
     });
+  };
+
+  const handleGoBack = () => {
+    if (initialPartyId) {
+      navigate(`/local-trade/parties/${initialPartyId}`);
+    } else {
+      navigate("/local-trade/invoices");
+    }
   };
 
   return (
@@ -343,7 +355,7 @@ export default function CreateInvoicePage() {
         <Button
           variant="ghost"
           size="icon"
-          onClick={() => navigate("/local-trade/invoices")}
+          onClick={handleGoBack}
         >
           <ArrowRight className="w-5 h-5" />
         </Button>
