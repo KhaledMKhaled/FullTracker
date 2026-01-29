@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import {
   User,
   Phone,
@@ -250,6 +250,7 @@ function getReturnStatusBadge(status: string) {
 export default function PartyProfilePage() {
   const params = useParams();
   const partyId = params.id ? parseInt(params.id) : 0;
+  const [, navigate] = useLocation();
   
   const [activeTab, setActiveTab] = useState("overview");
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -482,7 +483,7 @@ export default function PartyProfilePage() {
               <Plus className="w-4 h-4 ml-1" />
               تسجيل دفعة
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setIsInvoiceDialogOpen(true)}>
+            <Button size="sm" variant="outline" onClick={() => navigate(`/local-trade/invoices/new?partyId=${partyId}`)}>
               <FileSpreadsheet className="w-4 h-4 ml-1" />
               فاتورة جديدة
             </Button>
@@ -581,7 +582,7 @@ export default function PartyProfilePage() {
             kindFilter={invoiceKindFilter}
             setKindFilter={setInvoiceKindFilter}
             partyId={partyId}
-            onNewInvoice={() => setIsInvoiceDialogOpen(true)}
+            onNewInvoice={() => navigate(`/local-trade/invoices/new?partyId=${partyId}`)}
           />
         </TabsContent>
 

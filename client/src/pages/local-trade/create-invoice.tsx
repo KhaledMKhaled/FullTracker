@@ -99,23 +99,53 @@ export default function CreateInvoicePage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
-  const [invoiceType, setInvoiceType] = useState<"purchase" | "sale">("purchase");
-  const [partyId, setPartyId] = useState<number | null>(null);
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialPartyId = urlParams.get("partyId") ? parseInt(urlParams.get("partyId")!) : null;
+
+  const [invoiceType, setInvoiceType] = useState<"purchase" | "sale">("sale");
+  const [partyId, setPartyId] = useState<number | null>(initialPartyId);
   const [invoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [referenceName, setReferenceName] = useState("");
   const [referenceNumber, setReferenceNumber] = useState("");
   const [lines, setLines] = useState<InvoiceLineItem[]>([createEmptyLine()]);
+  const [invoiceTypeInitialized, setInvoiceTypeInitialized] = useState(false);
 
-  // For purchase: show merchants + both; For sale: show customers + both
-  const primaryPartyType = invoiceType === "purchase" ? "merchant" : "customer";
-  const { data: primaryParties } = useParties({ type: primaryPartyType });
+  // Fetch all parties to support pre-selection from URL
+  const { data: allParties } = useParties();
+  const { data: merchantParties } = useParties({ type: "merchant" });
+  const { data: customerParties } = useParties({ type: "customer" });
   const { data: bothParties } = useParties({ type: "both" });
-  const parties = [...(primaryParties || []), ...(bothParties || [])];
 
-  // Reset partyId when invoice type changes
+  // Build parties list based on invoice type
+  const parties = useMemo(() => {
+    if (invoiceType === "purchase") {
+      return [...(merchantParties || []), ...(bothParties || [])];
+    } else {
+      return [...(customerParties || []), ...(bothParties || [])];
+    }
+  }, [invoiceType, merchantParties, customerParties, bothParties]);
+
+  // Auto-set invoice type based on pre-selected party
+  useEffect(() => {
+    if (initialPartyId && allParties && !invoiceTypeInitialized) {
+      const party = allParties.find((p: Party) => p.id === initialPartyId);
+      if (party) {
+        if (party.type === "merchant") {
+          setInvoiceType("purchase");
+        } else if (party.type === "customer" || party.type === "both") {
+          setInvoiceType("sale");
+        }
+        setInvoiceTypeInitialized(true);
+      }
+    }
+  }, [initialPartyId, allParties, invoiceTypeInitialized]);
+
+  // Reset partyId when invoice type changes (only if not from URL initial load)
   const handleInvoiceTypeChange = (type: "purchase" | "sale") => {
     setInvoiceType(type);
-    setPartyId(null);
+    if (invoiceTypeInitialized) {
+      setPartyId(null);
+    }
   };
   const { data: productTypes } = useQuery<ProductType[]>({
     queryKey: ["/api/product-types"],

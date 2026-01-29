@@ -48,6 +48,10 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **January 2026**: Fixed Invoice Form Navigation
+  - Clicking "فاتورة جديدة" from party profile now navigates to the new invoice creation page
+  - Pre-selects the party and automatically sets invoice type based on party type
+  - Previously was opening old deprecated dialog instead of new enhanced form
 - **January 2026**: Invoice-Payment Linking System
   - Payments can now be linked to specific invoices
   - Track paid amount, remaining balance, and payment status (مسدد/جزئي/غير مسدد) per invoice
