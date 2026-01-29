@@ -342,10 +342,11 @@ export default function CreateInvoicePage() {
   };
 
   const handleGoBack = () => {
-    if (initialPartyId) {
-      navigate(`/local-trade/parties/${initialPartyId}`);
+    const targetPartyId = partyId || initialPartyId;
+    if (targetPartyId) {
+      navigate(`/local-trade/parties/${targetPartyId}`);
     } else {
-      navigate("/local-trade/invoices");
+      navigate("/local-trade/parties");
     }
   };
 
