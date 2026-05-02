@@ -1,14 +1,17 @@
 import { useState, useEffect } from "react";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import {
   Users,
   Plus,
   Search,
   Edit,
-  Eye,
   Phone,
   Store,
   Building,
+  MapPin,
+  ChevronLeft,
+  CreditCard,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,14 +23,6 @@ import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -63,17 +58,15 @@ interface Party {
 }
 
 export default function PartiesPage() {
-  const [location] = useLocation();
+  const [location, navigate] = useLocation();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>(() => {
-    // Initialize from URL on first render
     const params = new URLSearchParams(window.location.search);
     const typeFromUrl = params.get("type");
     return typeFromUrl && ["merchant", "customer", "both"].includes(typeFromUrl) ? typeFromUrl : "all";
   });
   const [showActiveOnly, setShowActiveOnly] = useState(false);
 
-  // Read type filter from URL query params when URL changes
   useEffect(() => {
     const handleUrlChange = () => {
       const params = new URLSearchParams(window.location.search);
@@ -84,15 +77,11 @@ export default function PartiesPage() {
         setTypeFilter("all");
       }
     };
-    
-    // Listen for popstate (back/forward) and custom events
     window.addEventListener('popstate', handleUrlChange);
-    
-    // Check on location change (wouter navigation)
     handleUrlChange();
-    
     return () => window.removeEventListener('popstate', handleUrlChange);
   }, [location]);
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [formPaymentTerms, setFormPaymentTerms] = useState("cash");
@@ -121,7 +110,7 @@ export default function PartiesPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
-    
+
     const data = {
       type: formData.get("type") as string,
       name: formData.get("name") as string,
@@ -166,7 +155,8 @@ export default function PartiesPage() {
     }
   };
 
-  const openEditDialog = (party: Party) => {
+  const openEditDialog = (party: Party, e: React.MouseEvent) => {
+    e.stopPropagation();
     setEditingParty(party);
     setFormPaymentTerms(party.paymentTerms);
     setFormCreditLimitMode(party.creditLimitMode);
@@ -182,25 +172,41 @@ export default function PartiesPage() {
     setIsDialogOpen(true);
   };
 
-  const getTypeLabel = (type: string) => {
-    return type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "مزدوج";
+  const getTypeLabel = (type: string) =>
+    type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "مزدوج";
+
+  const getTypeBadgeStyle = (type: string) => {
+    if (type === "merchant") return "bg-blue-100 text-blue-700 border-blue-200";
+    if (type === "customer") return "bg-purple-100 text-purple-700 border-purple-200";
+    return "bg-amber-100 text-amber-700 border-amber-200";
   };
 
-  const getPaymentTermsLabel = (terms: string) => {
-    return terms === "cash" ? "كاش" : "آجل";
-  };
+  const getPaymentTermsLabel = (terms: string) =>
+    terms === "cash" ? "كاش" : "آجل";
 
   const formatCurrency = (value: string | number | null | undefined) => {
     if (!value) return "0";
     const num = typeof value === "string" ? parseFloat(value) : value;
+    if (isNaN(num)) return "0";
     return new Intl.NumberFormat("ar-EG").format(num);
   };
 
+  const getBalance = (party: Party) => {
+    const raw = parseFloat(party.currentBalance || "0");
+    const abs = Math.abs(raw);
+    const isDebit = raw > 0;
+    const isCredit = raw < 0;
+    return { raw, abs, isDebit, isCredit };
+  };
+
+  const getInitials = (name: string) =>
+    name.trim().charAt(0).toUpperCase();
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6" dir="rtl">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold">الملفات (التجار والعملاء)</h1>
+          <h1 className="text-3xl font-semibold">الملفات</h1>
           <p className="text-muted-foreground mt-1">
             إدارة بيانات التجار والعملاء في التجارة المحلية
           </p>
@@ -212,7 +218,7 @@ export default function PartiesPage() {
               إضافة ملف جديد
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" dir="rtl">
             <DialogHeader>
               <DialogTitle>
                 {editingParty ? "تعديل الملف" : "إضافة ملف جديد"}
@@ -244,75 +250,39 @@ export default function PartiesPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="name">الاسم *</Label>
-                  <Input
-                    id="name"
-                    name="name"
-                    defaultValue={editingParty?.name || ""}
-                    required
-                    data-testid="input-party-name"
-                  />
+                  <Input id="name" name="name" defaultValue={editingParty?.name || ""} required data-testid="input-party-name" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="shopName">اسم المحل</Label>
-                  <Input
-                    id="shopName"
-                    name="shopName"
-                    defaultValue={editingParty?.shopName || ""}
-                    data-testid="input-party-shop"
-                  />
+                  <Input id="shopName" name="shopName" defaultValue={editingParty?.shopName || ""} data-testid="input-party-shop" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="phone">الهاتف</Label>
-                  <Input
-                    id="phone"
-                    name="phone"
-                    defaultValue={editingParty?.phone || ""}
-                    data-testid="input-party-phone"
-                  />
+                  <Input id="phone" name="phone" defaultValue={editingParty?.phone || ""} data-testid="input-party-phone" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="whatsapp">واتساب</Label>
-                  <Input
-                    id="whatsapp"
-                    name="whatsapp"
-                    defaultValue={editingParty?.whatsapp || ""}
-                    data-testid="input-party-whatsapp"
-                  />
+                  <Input id="whatsapp" name="whatsapp" defaultValue={editingParty?.whatsapp || ""} data-testid="input-party-whatsapp" />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="addressArea">المنطقة</Label>
-                  <Input
-                    id="addressArea"
-                    name="addressArea"
-                    defaultValue={editingParty?.addressArea || ""}
-                    data-testid="input-party-area"
-                  />
+                  <Input id="addressArea" name="addressArea" defaultValue={editingParty?.addressArea || ""} data-testid="input-party-area" />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="addressGovernorate">المحافظة</Label>
-                  <Input
-                    id="addressGovernorate"
-                    name="addressGovernorate"
-                    defaultValue={editingParty?.addressGovernorate || ""}
-                    data-testid="input-party-governorate"
-                  />
+                  <Input id="addressGovernorate" name="addressGovernorate" defaultValue={editingParty?.addressGovernorate || ""} data-testid="input-party-governorate" />
                 </div>
               </div>
 
               <div className="space-y-3">
                 <Label>نوع الدفع *</Label>
-                <RadioGroup
-                  name="paymentTerms"
-                  value={formPaymentTerms}
-                  onValueChange={setFormPaymentTerms}
-                  className="flex gap-6"
-                >
+                <RadioGroup name="paymentTerms" value={formPaymentTerms} onValueChange={setFormPaymentTerms} className="flex gap-6">
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="cash" id="payment-cash" />
                     <Label htmlFor="payment-cash" className="cursor-pointer">كاش</Label>
@@ -328,12 +298,7 @@ export default function PartiesPage() {
                 <div className="space-y-4 p-4 border rounded-lg bg-muted/30">
                   <div className="space-y-3">
                     <Label>حد الائتمان</Label>
-                    <RadioGroup
-                      name="creditLimitMode"
-                      value={formCreditLimitMode}
-                      onValueChange={setFormCreditLimitMode}
-                      className="flex gap-6"
-                    >
+                    <RadioGroup name="creditLimitMode" value={formCreditLimitMode} onValueChange={setFormCreditLimitMode} className="flex gap-6">
                       <div className="flex items-center gap-2">
                         <RadioGroupItem value="unlimited" id="limit-unlimited" />
                         <Label htmlFor="limit-unlimited" className="cursor-pointer">غير محدود</Label>
@@ -344,18 +309,10 @@ export default function PartiesPage() {
                       </div>
                     </RadioGroup>
                   </div>
-
                   {formCreditLimitMode === "limited" && (
                     <div className="space-y-2">
                       <Label htmlFor="creditLimitAmountEgp">قيمة الحد (ج.م)</Label>
-                      <Input
-                        id="creditLimitAmountEgp"
-                        name="creditLimitAmountEgp"
-                        type="number"
-                        step="0.01"
-                        defaultValue={editingParty?.creditLimitAmountEgp || ""}
-                        data-testid="input-party-credit-limit"
-                      />
+                      <Input id="creditLimitAmountEgp" name="creditLimitAmountEgp" type="number" step="0.01" defaultValue={editingParty?.creditLimitAmountEgp || ""} data-testid="input-party-credit-limit" />
                     </div>
                   )}
                 </div>
@@ -366,11 +323,7 @@ export default function PartiesPage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-3">
                     <Label>نوع الرصيد</Label>
-                    <RadioGroup
-                      value={formOpeningBalanceType}
-                      onValueChange={setFormOpeningBalanceType}
-                      className="flex gap-6"
-                    >
+                    <RadioGroup value={formOpeningBalanceType} onValueChange={setFormOpeningBalanceType} className="flex gap-6">
                       <div className="flex items-center gap-2">
                         <RadioGroupItem value="debit" id="balance-debit" />
                         <Label htmlFor="balance-debit" className="cursor-pointer">مدين (عليه)</Label>
@@ -383,43 +336,21 @@ export default function PartiesPage() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="openingBalanceEgp">قيمة الرصيد (ج.م)</Label>
-                    <Input
-                      id="openingBalanceEgp"
-                      name="openingBalanceEgp"
-                      type="number"
-                      step="0.01"
-                      defaultValue={editingParty?.openingBalanceEgp || "0"}
-                      data-testid="input-party-opening-balance"
-                    />
+                    <Input id="openingBalanceEgp" name="openingBalanceEgp" type="number" step="0.01" defaultValue={editingParty?.openingBalanceEgp || "0"} data-testid="input-party-opening-balance" />
                   </div>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
-                <Switch
-                  id="isActive"
-                  name="isActive"
-                  defaultChecked={editingParty?.isActive ?? true}
-                />
+                <Switch id="isActive" name="isActive" defaultChecked={editingParty?.isActive ?? true} />
                 <Label htmlFor="isActive">نشط</Label>
               </div>
 
               <div className="flex gap-2 pt-4">
-                <Button
-                  type="submit"
-                  className="flex-1"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                  data-testid="button-save-party"
-                >
-                  {createMutation.isPending || updateMutation.isPending
-                    ? "جاري الحفظ..."
-                    : "حفظ"}
+                <Button type="submit" className="flex-1" disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-party">
+                  {createMutation.isPending || updateMutation.isPending ? "جاري الحفظ..." : "حفظ"}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsDialogOpen(false)}
-                >
+                <Button type="button" variant="outline" onClick={() => setIsDialogOpen(false)}>
                   إلغاء
                 </Button>
               </div>
@@ -428,6 +359,7 @@ export default function PartiesPage() {
         </Dialog>
       </div>
 
+      {/* Filters */}
       <Card>
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center gap-4">
@@ -455,144 +387,137 @@ export default function PartiesPage() {
                 checked={showActiveOnly}
                 onCheckedChange={(checked) => setShowActiveOnly(checked === true)}
               />
-              <Label htmlFor="activeOnly" className="cursor-pointer text-sm">
-                النشطين فقط
-              </Label>
+              <Label htmlFor="activeOnly" className="cursor-pointer text-sm">النشطين فقط</Label>
             </div>
+            {filteredParties && (
+              <span className="text-sm text-muted-foreground mr-auto">
+                {filteredParties.length} ملف
+              </span>
+            )}
           </div>
         </CardContent>
       </Card>
 
+      {/* Table */}
       {isLoading ? (
         <Card>
-          <CardContent className="p-4">
-            <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} className="h-16 w-full" />
-              ))}
-            </div>
+          <CardContent className="p-4 space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton className="h-12 w-12 rounded-full" />
+                <div className="flex-1 space-y-2">
+                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-3 w-28" />
+                </div>
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-24" />
+              </div>
+            ))}
           </CardContent>
         </Card>
       ) : filteredParties && filteredParties.length > 0 ? (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[60px]">صورة</TableHead>
-                  <TableHead>الاسم</TableHead>
-                  <TableHead>النوع</TableHead>
-                  <TableHead>المحل</TableHead>
-                  <TableHead>الهاتف</TableHead>
-                  <TableHead>نوع الدفع</TableHead>
-                  <TableHead>حد الائتمان</TableHead>
-                  <TableHead>الرصيد الحالي</TableHead>
-                  <TableHead>الحالة</TableHead>
-                  <TableHead className="w-[100px]">إجراءات</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredParties.map((party) => (
-                  <TableRow key={party.id} data-testid={`row-party-${party.id}`}>
-                    <TableCell>
-                      <Avatar className="w-10 h-10">
-                        <AvatarImage src={party.imageUrl || undefined} />
-                        <AvatarFallback className="bg-primary/10">
-                          {party.type === "merchant" ? (
-                            <Store className="w-5 h-5 text-primary" />
-                          ) : (
-                            <Building className="w-5 h-5 text-primary" />
-                          )}
-                        </AvatarFallback>
-                      </Avatar>
-                    </TableCell>
-                    <TableCell className="font-medium">{party.name}</TableCell>
-                    <TableCell>
-                      <Badge variant={party.type === "merchant" ? "default" : "secondary"}>
+        <Card className="overflow-hidden">
+          <div className="divide-y">
+            {filteredParties.map((party) => {
+              const { raw, abs, isDebit, isCredit } = getBalance(party);
+              const address = [party.addressArea, party.addressGovernorate].filter(Boolean).join(" - ");
+
+              return (
+                <div
+                  key={party.id}
+                  className="flex items-center gap-4 px-4 py-3 hover:bg-muted/50 transition-colors cursor-pointer group"
+                  onClick={() => navigate(`/local-trade/parties/${party.id}`)}
+                  data-testid={`row-party-${party.id}`}
+                >
+                  {/* Avatar */}
+                  <Avatar className="w-11 h-11 shrink-0 ring-2 ring-offset-1 ring-transparent group-hover:ring-primary/20 transition-all">
+                    <AvatarImage src={party.imageUrl || undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary font-bold text-base">
+                      {getInitials(party.name)}
+                    </AvatarFallback>
+                  </Avatar>
+
+                  {/* Name + Shop + Address */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-base leading-tight group-hover:text-primary transition-colors">
+                        {party.name}
+                      </span>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${getTypeBadgeStyle(party.type)}`}>
                         {getTypeLabel(party.type)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{party.shopName || "-"}</TableCell>
-                    <TableCell>
-                      {party.phone ? (
-                        <div className="flex items-center gap-1">
+                      </span>
+                      {!party.isActive && (
+                        <span className="inline-flex items-center rounded-full bg-gray-100 text-gray-500 border border-gray-200 px-2 py-0.5 text-xs">
+                          غير نشط
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                      {party.shopName && (
+                        <span className="text-sm text-muted-foreground flex items-center gap-1">
+                          <Store className="w-3 h-3" />
+                          {party.shopName}
+                        </span>
+                      )}
+                      {party.phone && (
+                        <span className="text-sm text-muted-foreground flex items-center gap-1" dir="ltr">
                           <Phone className="w-3 h-3" />
-                          <span>{party.phone}</span>
-                        </div>
-                      ) : (
-                        "-"
+                          {party.phone}
+                        </span>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">
-                        {getPaymentTermsLabel(party.paymentTerms)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {party.paymentTerms === "credit" ? (
-                        party.creditLimitMode === "unlimited" ? (
-                          "غير محدود"
-                        ) : (
-                          `${formatCurrency(party.creditLimitAmountEgp)} ج.م`
-                        )
-                      ) : (
-                        "-"
+                      {address && (
+                        <span className="text-sm text-muted-foreground flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {address}
+                        </span>
                       )}
-                    </TableCell>
-                    <TableCell>
-                      {(() => {
-                        const raw = parseFloat(party.currentBalance || "0");
-                        const abs = Math.abs(raw);
-                        const isDebit = raw > 0;
-                        const isCredit = raw < 0;
-                        return (
-                          <span className={isDebit ? "text-red-600" : isCredit ? "text-green-600" : ""}>
-                            {formatCurrency(abs.toFixed(2))} ج.م
-                            {raw !== 0 && (
-                              <span className="text-xs mr-1">({isDebit ? "عليه" : "له"})</span>
-                            )}
-                          </span>
-                        );
-                      })()}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={party.isActive ? "default" : "secondary"}
-                        className={
-                          party.isActive
-                            ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                            : ""
-                        }
-                      >
-                        {party.isActive ? "نشط" : "غير نشط"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => openEditDialog(party)}
-                          data-testid={`button-edit-party-${party.id}`}
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                        <Link href={`/local-trade/parties/${party.id}`}>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            data-testid={`button-view-party-${party.id}`}
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                        </Link>
+                    </div>
+                  </div>
+
+                  {/* Payment Terms */}
+                  <div className="hidden sm:flex flex-col items-center gap-1 shrink-0">
+                    <span className="text-xs text-muted-foreground">نوع الدفع</span>
+                    <span className={`inline-flex items-center gap-1 text-xs font-medium rounded-full px-2 py-0.5 border ${party.paymentTerms === "cash" ? "bg-green-50 text-green-700 border-green-200" : "bg-orange-50 text-orange-700 border-orange-200"}`}>
+                      {party.paymentTerms === "cash" ? <Wallet className="w-3 h-3" /> : <CreditCard className="w-3 h-3" />}
+                      {getPaymentTermsLabel(party.paymentTerms)}
+                    </span>
+                  </div>
+
+                  {/* Balance */}
+                  <div className="hidden md:flex flex-col items-end shrink-0 min-w-[110px]">
+                    <span className="text-xs text-muted-foreground mb-0.5">الرصيد الحالي</span>
+                    {raw === 0 ? (
+                      <span className="font-mono text-sm text-muted-foreground">صفر</span>
+                    ) : (
+                      <div className="text-left">
+                        <span className={`font-mono font-semibold text-sm ${isDebit ? "text-red-600" : "text-green-600"}`}>
+                          {formatCurrency(abs.toFixed(2))} ج.م
+                        </span>
+                        <span className={`text-xs mr-1 ${isDebit ? "text-red-500" : "text-green-500"}`}>
+                          ({isDebit ? "عليه" : "له"})
+                        </span>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => openEditDialog(party, e)}
+                      title="تعديل"
+                      data-testid={`button-edit-party-${party.id}`}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                    <ChevronLeft className="w-4 h-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       ) : (
         <Card>
@@ -603,12 +528,14 @@ export default function PartiesPage() {
               </div>
               <h3 className="text-xl font-medium mb-2">لا توجد ملفات</h3>
               <p className="text-muted-foreground mb-6">
-                ابدأ بإضافة تاجر أو عميل جديد
+                {search ? `لا توجد نتائج لـ "${search}"` : "ابدأ بإضافة تاجر أو عميل جديد"}
               </p>
-              <Button onClick={openNewDialog}>
-                <Plus className="w-4 h-4 ml-2" />
-                إضافة ملف جديد
-              </Button>
+              {!search && (
+                <Button onClick={openNewDialog}>
+                  <Plus className="w-4 h-4 ml-2" />
+                  إضافة ملف جديد
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
