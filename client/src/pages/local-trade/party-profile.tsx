@@ -1312,24 +1312,54 @@ function ViewInvoiceDialog({
                       <TableRow>
                         <TableHead className="text-right text-xs">المنتج</TableHead>
                         <TableHead className="text-right text-xs">الكراتين</TableHead>
-                        <TableHead className="text-right text-xs">القطع</TableHead>
+                        <TableHead className="text-right text-xs">المطلوب</TableHead>
+                        {inv.status === 'received' && (
+                          <>
+                            <TableHead className="text-right text-xs">المستلم</TableHead>
+                            <TableHead className="text-right text-xs">النواقص</TableHead>
+                          </>
+                        )}
                         <TableHead className="text-right text-xs">سعر الوحدة</TableHead>
                         <TableHead className="text-right text-xs">الإجمالي</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {lines.map((line: any, idx: number) => (
-                        <TableRow key={line.id || idx}>
-                          <TableCell className="text-sm font-medium">{line.productName}</TableCell>
-                          <TableCell className="font-mono text-sm">{line.cartons}</TableCell>
-                          <TableCell className="font-mono text-sm">{line.totalPieces}</TableCell>
-                          <TableCell className="font-mono text-sm">{formatCurrency(line.unitPriceEgp)} ج.م</TableCell>
-                          <TableCell className="font-mono text-sm font-semibold">{formatCurrency(line.lineTotalEgp)} ج.م</TableCell>
-                        </TableRow>
-                      ))}
+                      {lines.map((line: any, idx: number) => {
+                        const received = line.receivedPieces ?? line.totalPieces;
+                        const shortage = line.totalPieces - received;
+                        return (
+                          <TableRow key={line.id || idx} className={inv.status === 'received' && shortage > 0 ? "bg-destructive/5" : ""}>
+                            <TableCell className="text-sm font-medium">{line.productName}</TableCell>
+                            <TableCell className="font-mono text-sm">{line.cartons}</TableCell>
+                            <TableCell className="font-mono text-sm">{line.totalPieces}</TableCell>
+                            {inv.status === 'received' && (
+                              <>
+                                <TableCell className="font-mono text-sm text-green-700">{received}</TableCell>
+                                <TableCell className="font-mono text-sm">
+                                  {shortage > 0 ? (
+                                    <Badge variant="destructive" className="text-xs">{shortage} ناقص</Badge>
+                                  ) : (
+                                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
+                                      <CheckCircle className="w-3 h-3 ml-1" />تمام
+                                    </Badge>
+                                  )}
+                                </TableCell>
+                              </>
+                            )}
+                            <TableCell className="font-mono text-sm">{formatCurrency(line.unitPriceEgp)} ج.م</TableCell>
+                            <TableCell className="font-mono text-sm font-semibold">{formatCurrency(line.lineTotalEgp)} ج.م</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
+                {inv.status === 'received' && lines.some((l: any) => (l.totalPieces - (l.receivedPieces ?? l.totalPieces)) > 0) && (
+                  <div className="mt-2 flex items-center gap-2 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
+                    <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                    يوجد نواقص في هذه الفاتورة — تم إنشاء حالات هامش تلقائية، راجع تبويب الهوامش
+                  </div>
+                )}
               </div>
             )}
 
@@ -2143,9 +2173,13 @@ function ReturnsTab({
                       ) : <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="font-mono">
-                      {rc.status === 'resolved' && parseFloat(rc.amountEgp || '0') > 0
-                        ? <span className="text-green-700">{formatCurrency(rc.amountEgp)} ج.م</span>
-                        : <span className="text-muted-foreground">—</span>}
+                      {parseFloat(rc.amountEgp || '0') > 0 ? (
+                        <span className={rc.status === 'resolved' ? "text-green-700" : "text-amber-700"}>
+                          {formatCurrency(rc.amountEgp)} ج.م
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs">{formatDate(rc.createdAt)}</TableCell>
                     <TableCell>

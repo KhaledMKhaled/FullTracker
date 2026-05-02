@@ -161,6 +161,8 @@ export function useReceiveInvoice() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/return-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
     },
   });
 }

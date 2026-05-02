@@ -4111,6 +4111,10 @@ export class DatabaseStorage implements IStorage {
 
     const { invoice, lines } = invoiceData;
 
+    // Fetch the actual party type (don't hardcode)
+    const partyData = await this.getParty(invoice.partyId);
+    const partyTypeSnapshot = partyData?.type || 'merchant';
+
     await this.updateLocalInvoice(invoiceId, { status: 'received' });
 
     const receipt = await this.createReceipt({
@@ -4155,7 +4159,7 @@ export class DatabaseStorage implements IStorage {
           
           await this.createReturnCase({
             partyId: invoice.partyId,
-            partyTypeSnapshot: 'merchant',
+            partyTypeSnapshot,
             seasonId: invoice.seasonId,
             sourceInvoiceId: invoiceId,
             sourceLineId: line.id,
