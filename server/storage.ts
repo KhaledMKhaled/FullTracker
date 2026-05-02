@@ -4072,15 +4072,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice> {
-    // Validate dozen (دستة) unit quantities as safety check
-    for (const line of lines) {
-      if (line.unitMode === 'dozen' && (line.totalPieces || 0) % 12 !== 0) {
-        throw new Error(
-          `الكمية ${line.totalPieces} لا يمكن تقسيمها على 12. يجب أن تكون الكمية بالدستة قابلة للقسمة على 12.`
-        );
-      }
-    }
-    
     return db.transaction(async (tx) => {
       const [invoice] = await tx.insert(localInvoices).values(data).returning();
       
