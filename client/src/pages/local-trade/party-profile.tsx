@@ -26,6 +26,7 @@ import {
   Package,
   AlertTriangle,
   Camera,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -649,6 +650,9 @@ export default function PartyProfilePage() {
             isLoading={isLoadingPayments}
             onNewPayment={() => setIsPaymentDialogOpen(true)}
             invoices={(invoices as any[]) || []}
+            partyData={partyData}
+            summary={summary}
+            currentBalance={currentBalance}
           />
         </TabsContent>
 
@@ -1664,13 +1668,19 @@ function PaymentsTab({
   isLoading,
   onNewPayment,
   invoices,
+  partyData,
+  summary,
+  currentBalance,
 }: {
   payments: any[];
   isLoading: boolean;
   onNewPayment: () => void;
   invoices?: any[];
+  partyData?: any;
+  summary?: any;
+  currentBalance?: number;
 }) {
-  // Create a map of invoice ID to reference number for quick lookup
+  const [receiptPayment, setReceiptPayment] = useState<any>(null);
   const invoiceMap = new Map((invoices || []).map((inv: any) => [inv.id, inv]));
 
   return (
@@ -1698,12 +1708,13 @@ function PaymentsTab({
                 <TableHead className="text-right">طريقة الدفع</TableHead>
                 <TableHead className="text-right">الفواتير المسددة (FIFO)</TableHead>
                 <TableHead className="text-right">ملاحظات</TableHead>
+                <TableHead className="text-right w-16"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {payments.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     لا توجد مدفوعات
                   </TableCell>
                 </TableRow>
@@ -1740,6 +1751,17 @@ function PaymentsTab({
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">{payment.notes || "-"}</TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0"
+                          title="طباعة إيصال"
+                          onClick={() => setReceiptPayment(payment)}
+                        >
+                          <Printer className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </TableCell>
                     </TableRow>
                   );
                 })
@@ -1748,7 +1770,290 @@ function PaymentsTab({
           </Table>
         </div>
       )}
+
+      <PaymentReceiptDialog
+        open={!!receiptPayment}
+        onOpenChange={(val) => { if (!val) setReceiptPayment(null); }}
+        payment={receiptPayment}
+        party={partyData}
+        invoiceMap={invoiceMap}
+        summary={summary}
+        currentBalance={currentBalance ?? 0}
+      />
     </div>
+  );
+}
+
+function PaymentReceiptDialog({
+  open,
+  onOpenChange,
+  payment,
+  party,
+  invoiceMap,
+  summary,
+  currentBalance,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  payment: any;
+  party: any;
+  invoiceMap: Map<number, any>;
+  summary: any;
+  currentBalance: number;
+}) {
+  if (!payment) return null;
+
+  const allocations: any[] = payment.allocations || [];
+  const balance = Math.abs(currentBalance);
+  const balanceDir = currentBalance > 0 ? "عليه" : currentBalance < 0 ? "له" : "صفر";
+
+  const handlePrint = () => {
+    const printContent = document.getElementById("payment-receipt-content");
+    if (!printContent) return;
+    const win = window.open("", "_blank", "width=400,height=700");
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html dir="rtl" lang="ar">
+      <head>
+        <meta charset="UTF-8"/>
+        <title>إيصال سداد #${payment.id}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: 'Cairo', 'Tahoma', Arial, sans-serif;
+            font-size: 13px;
+            color: #111;
+            background: #fff;
+            width: 80mm;
+            padding: 8px;
+          }
+          .center { text-align: center; }
+          .bold { font-weight: bold; }
+          .large { font-size: 22px; }
+          .xlarge { font-size: 28px; }
+          .small { font-size: 11px; }
+          .muted { color: #666; }
+          .green { color: #16a34a; }
+          .red { color: #dc2626; }
+          .row { display: flex; justify-content: space-between; margin: 3px 0; }
+          .divider { border-top: 1px dashed #aaa; margin: 8px 0; }
+          .divider-solid { border-top: 1px solid #333; margin: 8px 0; }
+          .receipt-box { border: 1px solid #ddd; border-radius: 4px; padding: 8px; margin-bottom: 8px; }
+          .amount-box { background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 12px; margin-bottom: 8px; text-align: center; }
+          .alloc-badge { background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8; border-radius: 3px; padding: 2px 5px; margin: 1px; display: inline-block; }
+          .summary-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px; margin-bottom: 8px; }
+          .summary-total { border-top: 1px solid #d1d5db; margin-top: 6px; padding-top: 6px; font-weight: bold; }
+          @media print { body { margin: 0; } }
+        </style>
+      </head>
+      <body>
+        <div class="center" style="margin-bottom:10px">
+          <div class="xlarge bold" style="letter-spacing:2px">TRACKER</div>
+          <div class="small muted">نظام إدارة التجارة المحلية</div>
+        </div>
+
+        <div class="divider-solid"></div>
+
+        <div class="center" style="margin-bottom:10px">
+          <span class="bold" style="background:#f3f4f6;padding:3px 10px;border-radius:4px;border:1px solid #e5e7eb;">
+            إيصال سداد رقم #${payment.id}
+          </span>
+        </div>
+
+        <div class="receipt-box">
+          <div class="row"><span class="muted">العميل / التاجر:</span><span class="bold">${party?.name || ""}</span></div>
+          ${party?.shopName ? `<div class="row"><span class="muted">اسم المحل:</span><span>${party.shopName}</span></div>` : ""}
+          ${party?.phone ? `<div class="row"><span class="muted">الهاتف:</span><span dir="ltr">${party.phone}</span></div>` : ""}
+          ${party?.addressArea ? `<div class="row"><span class="muted">المنطقة:</span><span>${party.addressArea}${party.addressGovernorate ? " - " + party.addressGovernorate : ""}</span></div>` : ""}
+        </div>
+
+        <div class="receipt-box">
+          <div class="row"><span class="muted">تاريخ السداد:</span><span>${payment.paymentDate || ""}</span></div>
+          <div class="row"><span class="muted">طريقة الدفع:</span><span class="bold">${payment.paymentMethod || "نقدي"}</span></div>
+          ${payment.notes ? `<div class="row"><span class="muted">ملاحظات:</span><span>${payment.notes}</span></div>` : ""}
+        </div>
+
+        ${allocations.length > 0 ? `
+        <div class="receipt-box">
+          <div class="small muted bold" style="margin-bottom:5px">الفواتير المسددة:</div>
+          ${allocations.map((alloc: any) => {
+            const inv = invoiceMap.get(alloc.invoiceId);
+            const label = inv?.referenceNumber || `فاتورة #${alloc.invoiceId}`;
+            const amount = parseFloat(alloc.amountEgp || "0").toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            return `<div class="row"><span class="alloc-badge">${label}</span><span style="font-family:monospace">${amount} ج.م</span></div>`;
+          }).join("")}
+        </div>` : ""}
+
+        <div class="amount-box">
+          <div class="small muted" style="margin-bottom:4px">المبلغ المدفوع</div>
+          <div class="xlarge bold green" style="font-family:monospace">
+            ${parseFloat(payment.amountEgp || "0").toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span style="font-size:14px"> ج.م</span>
+          </div>
+        </div>
+
+        <div class="summary-box">
+          <div class="small muted bold" style="margin-bottom:5px">ملخص الحساب:</div>
+          <div class="row"><span>إجمالي الفواتير:</span><span style="font-family:monospace">${parseFloat(summary?.kpis?.totalInvoicesEgp || "0").toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م</span></div>
+          <div class="row green"><span>إجمالي المدفوع:</span><span style="font-family:monospace">${parseFloat(summary?.kpis?.totalPaidEgp || "0").toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م</span></div>
+          <div class="summary-total row ${currentBalance > 0 ? "red" : "green"}">
+            <span>الرصيد المتبقي:</span>
+            <span style="font-family:monospace">${balance.toLocaleString("ar-EG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ج.م (${balanceDir})</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+        <div class="center small muted">
+          <div>شكراً لتعاملكم معنا</div>
+          <div style="margin-top:4px">${new Date().toLocaleString("ar-EG")}</div>
+        </div>
+      </body>
+      </html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); }, 400);
+  };
+
+  const getTypeLabel = (type: string) =>
+    type === "merchant" ? "تاجر" : type === "customer" ? "عميل" : "مزدوج";
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm p-0 overflow-hidden" dir="rtl">
+        <DialogHeader className="px-4 pt-4 pb-2 border-b">
+          <DialogTitle className="text-center text-base">إيصال سداد رقم #{payment.id}</DialogTitle>
+        </DialogHeader>
+
+        <div id="payment-receipt-content" className="px-4 py-3 space-y-3 max-h-[75vh] overflow-y-auto">
+          {/* Store Header */}
+          <div className="text-center border-b pb-3">
+            <div className="text-2xl font-black tracking-widest">TRACKER</div>
+            <div className="text-xs text-muted-foreground">نظام إدارة التجارة المحلية</div>
+          </div>
+
+          {/* Party Info */}
+          <div className="bg-muted/40 rounded-lg p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">العميل / التاجر:</span>
+              <span className="font-bold">{party?.name}</span>
+            </div>
+            {party?.shopName && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">اسم المحل:</span>
+                <span>{party.shopName}</span>
+              </div>
+            )}
+            {party?.phone && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">الهاتف:</span>
+                <span dir="ltr" className="font-mono text-xs">{party.phone}</span>
+              </div>
+            )}
+            {party?.type && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">النوع:</span>
+                <span>{getTypeLabel(party.type)}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Payment Details */}
+          <div className="bg-muted/40 rounded-lg p-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">تاريخ السداد:</span>
+              <span>{formatDate(payment.paymentDate)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">طريقة الدفع:</span>
+              <span className="font-semibold">{payment.paymentMethod || "نقدي"}</span>
+            </div>
+            {payment.notes && (
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground shrink-0">ملاحظات:</span>
+                <span className="text-right text-xs">{payment.notes}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Allocations */}
+          {allocations.length > 0 && (
+            <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+              <div className="text-xs font-semibold text-blue-700 mb-2">الفواتير المسددة:</div>
+              <div className="space-y-1.5">
+                {allocations.map((alloc: any) => {
+                  const inv = invoiceMap.get(alloc.invoiceId);
+                  const label = inv?.referenceNumber || `فاتورة #${alloc.invoiceId}`;
+                  return (
+                    <div key={alloc.id} className="flex justify-between text-sm">
+                      <span className="inline-flex items-center rounded border border-blue-200 bg-white px-2 py-0.5 text-xs text-blue-700 font-medium">
+                        {label}
+                      </span>
+                      <span className="font-mono font-semibold text-blue-800">
+                        {formatCurrency(alloc.amountEgp)} ج.م
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Big Amount */}
+          <div className="bg-green-50 border-2 border-green-200 rounded-xl p-4 text-center">
+            <div className="text-xs text-green-600 mb-1 font-medium">المبلغ المدفوع</div>
+            <div className="text-4xl font-black text-green-700 font-mono leading-none">
+              {formatCurrency(payment.amountEgp)}
+            </div>
+            <div className="text-base text-green-600 mt-1">جنيه مصري</div>
+          </div>
+
+          {/* Account Summary */}
+          <div className="border rounded-lg overflow-hidden">
+            <div className="bg-muted px-3 py-1.5 text-xs font-semibold text-muted-foreground">
+              ملخص الحساب
+            </div>
+            <div className="p-3 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">إجمالي الفواتير:</span>
+                <span className="font-mono">{formatCurrency(summary?.kpis?.totalInvoicesEgp || 0)} ج.م</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">إجمالي المدفوع:</span>
+                <span className="font-mono text-green-600 font-semibold">
+                  {formatCurrency(summary?.kpis?.totalPaidEgp || 0)} ج.م
+                </span>
+              </div>
+              <div className="border-t pt-2 flex justify-between font-bold text-base">
+                <span>الرصيد المتبقي:</span>
+                <span className={`font-mono ${currentBalance > 0 ? "text-red-600" : currentBalance < 0 ? "text-green-600" : "text-muted-foreground"}`}>
+                  {formatCurrency(balance)} ج.م
+                  <span className="text-sm font-normal mr-1">({balanceDir})</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div className="text-center text-xs text-muted-foreground border-t pt-3 pb-1">
+            <div className="font-medium">شكراً لتعاملكم معنا</div>
+            <div className="mt-0.5">{new Date().toLocaleString("ar-EG")}</div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="px-4 pb-4 pt-2 border-t flex gap-2">
+          <Button onClick={handlePrint} className="flex-1 gap-1">
+            <Printer className="w-4 h-4" />
+            طباعة الإيصال
+          </Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            إغلاق
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
