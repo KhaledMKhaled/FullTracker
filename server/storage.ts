@@ -4143,18 +4143,8 @@ export class DatabaseStorage implements IStorage {
         .where(eq(localInvoiceLines.id, line.id));
 
       if (invoice.invoiceKind === 'purchase') {
-        // Create inventory movement for received quantity only
+        // Count received lines (no inventory_movements needed — local trade tracks via receivedPieces)
         if (receivedPieces > 0) {
-          const unitPrice = parseFloat(line.unitPriceEgp?.toString() || '0');
-          const receivedTotal = receivedPieces * unitPrice;
-          
-          await this.createInventoryMovement({
-            productId: line.productTypeId,
-            totalPiecesIn: receivedPieces,
-            unitCostEgp: line.unitPriceEgp,
-            totalCostEgp: receivedTotal.toString(),
-            movementDate,
-          });
           movementsCreated++;
         }
 
