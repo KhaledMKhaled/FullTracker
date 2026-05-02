@@ -142,12 +142,6 @@ function formatDozenQuantity(quantity: number, unit: string): string {
   return `${quantity} ${getUnitLabel(unit)}`;
 }
 
-function validateDozenQuantity(quantity: number, unit: string): string | null {
-  if (unit === "dozen" && quantity % 12 !== 0) {
-    return `الكمية ${quantity} لا يمكن تقسيمها على 12. يجب أن تكون الكمية بالدستة قابلة للقسمة على 12.`;
-  }
-  return null;
-}
 
 function getStatusBadge(status: string) {
   switch (status) {
@@ -445,16 +439,11 @@ function CreateInvoiceDialog({
   const lineTotal = (line: CreateInvoiceLineInput) => line.quantity * line.unitPriceEgp;
   const invoiceTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
 
-  const getLineError = (line: CreateInvoiceLineInput): string | null => {
-    return validateDozenQuantity(line.quantity, line.unit);
-  };
-
-  const hasDozenValidationErrors = lines.some((l) => getLineError(l) !== null);
+  const getLineError = (_line: CreateInvoiceLineInput): string | null => null;
 
   const handleSubmit = () => {
     if (!partyId) return;
     if (lines.some((l) => !l.productTypeId || l.quantity <= 0)) return;
-    if (hasDozenValidationErrors) return;
 
     onSubmit({
       invoiceKind,
@@ -643,14 +632,9 @@ function CreateInvoiceDialog({
                             }
                             className={`w-20 ${getLineError(line) ? 'border-destructive' : ''}`}
                           />
-                          {line.unit === "dozen" && line.quantity % 12 === 0 && line.quantity > 0 && (
+                          {line.unit === "dozen" && line.quantity > 0 && (
                             <p className="text-xs text-muted-foreground">
-                              {line.quantity / 12} دستة ({line.quantity} قطعة)
-                            </p>
-                          )}
-                          {getLineError(line) && (
-                            <p className="text-xs text-destructive">
-                              {getLineError(line)}
+                              {(line.quantity / 12).toFixed(2)} دستة ({line.quantity} قطعة)
                             </p>
                           )}
                         </div>
@@ -726,8 +710,7 @@ function CreateInvoiceDialog({
               disabled={
                 isLoading ||
                 !partyId ||
-                lines.some((l) => !l.productTypeId || l.quantity <= 0) ||
-                hasDozenValidationErrors
+                lines.some((l) => !l.productTypeId || l.quantity <= 0)
               }
             >
               {isLoading ? "جاري الحفظ..." : "حفظ الفاتورة"}

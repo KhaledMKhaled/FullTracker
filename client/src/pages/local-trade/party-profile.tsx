@@ -105,12 +105,6 @@ interface CreateInvoiceLineInput {
   unitPriceEgp: number;
 }
 
-function validateDozenQuantity(quantity: number, unit: string): string | null {
-  if (unit === "dozen" && quantity % 12 !== 0) {
-    return "الكمية يجب أن تكون من مضاعفات 12 عند البيع بالدستة";
-  }
-  return null;
-}
 
 interface Party {
   id: number;
@@ -429,15 +423,10 @@ export default function PartyProfilePage() {
   const lineTotal = (line: CreateInvoiceLineInput) => line.quantity * line.unitPriceEgp;
   const invoiceTotal = invoiceLines.reduce((sum, line) => sum + lineTotal(line), 0);
 
-  const getLineError = (line: CreateInvoiceLineInput): string | null => {
-    return validateDozenQuantity(line.quantity, line.unit);
-  };
-
-  const hasDozenValidationErrors = invoiceLines.some((l) => getLineError(l) !== null);
+  const getLineError = (_line: CreateInvoiceLineInput): string | null => null;
 
   const handleInvoiceSubmit = () => {
     if (invoiceLines.some((l) => !l.productTypeId || l.quantity <= 0)) return;
-    if (hasDozenValidationErrors) return;
 
     createInvoiceMutation.mutate(
       {
@@ -930,7 +919,6 @@ export default function PartyProfilePage() {
               </div>
 
               {invoiceLines.map((line, idx) => {
-                const error = getLineError(line);
                 return (
                   <div key={idx} className="border rounded-lg p-4 space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -966,8 +954,10 @@ export default function PartyProfilePage() {
                             })
                           }
                         />
-                        {error && (
-                          <p className="text-xs text-red-500">{error}</p>
+                        {line.unit === "dozen" && line.quantity > 0 && (
+                          <p className="text-xs text-muted-foreground">
+                            {(line.quantity / 12).toFixed(2)} دستة
+                          </p>
                         )}
                       </div>
                       <div className="space-y-2">
@@ -1042,8 +1032,7 @@ export default function PartyProfilePage() {
                 onClick={handleInvoiceSubmit}
                 disabled={
                   createInvoiceMutation.isPending ||
-                  invoiceLines.some((l) => !l.productTypeId || l.quantity <= 0) ||
-                  hasDozenValidationErrors
+                  invoiceLines.some((l) => !l.productTypeId || l.quantity <= 0)
                 }
               >
                 {createInvoiceMutation.isPending ? "جاري الحفظ..." : "حفظ الفاتورة"}
