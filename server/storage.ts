@@ -4016,20 +4016,21 @@ export class DatabaseStorage implements IStorage {
     }
 
     // paidAmount = allocations (FIFO/return_deduction) + direct-linked payments with no allocation (backward compat)
+    // NOTE: use sql.raw table.col references for correlated subqueries — Drizzle parameterises column refs otherwise
     const invoicesQuery = db
       .select({
         invoice: localInvoices,
         paidAmount: sql<string>`(
           SELECT COALESCE(SUM(lia.amount_egp), 0)
           FROM local_invoice_allocations lia
-          WHERE lia.invoice_id = ${localInvoices.id}
+          WHERE lia.invoice_id = local_invoices.id
         ) + (
           SELECT COALESCE(SUM(lp.amount_egp), 0)
           FROM local_payments lp
-          WHERE lp.invoice_id = ${localInvoices.id}
+          WHERE lp.invoice_id = local_invoices.id
           AND NOT EXISTS (
             SELECT 1 FROM local_invoice_allocations lia2
-            WHERE lia2.payment_id = lp.id AND lia2.invoice_id = ${localInvoices.id}
+            WHERE lia2.payment_id = lp.id AND lia2.invoice_id = local_invoices.id
           )
         )`,
       })
