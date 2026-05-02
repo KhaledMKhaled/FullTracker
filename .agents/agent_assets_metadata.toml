@@ -6,3 +6,9 @@ id = "MaxEmUHEiYbAjvPmHnGfT"
 uri = "file://PRD_ملفات_التجارة_المحلية.txt"
 type = "text"
 title = "PRD — وحدة ملفات التجارة المحلية"
+
+[[outputs]]
+id = "tgCFT1VgzXVkS8zTcCrMA"
+uri = "file://PRD_ملفات_التجارة_المحلية.docx"
+type = "word_document"
+title = "PRD — وحدة ملفات التجارة المحلية (.docx)"
