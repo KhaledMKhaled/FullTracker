@@ -22,6 +22,10 @@ import {
   History,
   FileDown,
   Trash2,
+  Eye,
+  Package,
+  AlertTriangle,
+  Camera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +86,8 @@ import {
   useNotifications,
   useCheckDueCollections,
   useMarkNotificationRead,
+  useLocalInvoice,
+  useReceiveInvoice,
 } from "@/hooks/use-local-trade";
 import { useAuth } from "@/hooks/useAuth";
 import { getErrorMessage, queryClient } from "@/lib/queryClient";
@@ -231,12 +237,19 @@ function formatDate(dateStr: string | null | undefined): string {
 
 function getStatusBadge(status: string) {
   switch (status) {
+    case "draft":
+      return <Badge variant="secondary">مسودة</Badge>;
     case "pending":
       return <Badge variant="secondary">معلقة</Badge>;
+    case "partially_received":
     case "partial":
       return <Badge variant="outline" className="border-amber-500 text-amber-600">مستلمة جزئياً</Badge>;
     case "received":
       return <Badge variant="default" className="bg-green-600">مستلمة</Badge>;
+    case "cancelled":
+      return <Badge variant="destructive">ملغاة</Badge>;
+    case "archived":
+      return <Badge variant="outline">مؤرشفة</Badge>;
     default:
       return <Badge variant="secondary">{status}</Badge>;
   }
@@ -625,6 +638,7 @@ export default function PartyProfilePage() {
             kindFilter={invoiceKindFilter}
             setKindFilter={setInvoiceKindFilter}
             partyId={partyId}
+            partyType={partyData?.type}
             onNewInvoice={() => navigate(`/local-trade/invoices/new?partyId=${partyId}`)}
           />
         </TabsContent>
@@ -1191,6 +1205,300 @@ function OverviewTab({
   );
 }
 
+function ViewInvoiceDialog({
+  invoiceId,
+  onClose,
+}: {
+  invoiceId: number | null;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useLocalInvoice(invoiceId || 0);
+  const invoiceData = data as { invoice: any; lines: any[] } | undefined;
+  const inv = invoiceData?.invoice;
+  const lines = invoiceData?.lines || [];
+
+  const totalCartons = lines.reduce((s: number, l: any) => s + (l.cartons || 0), 0);
+  const totalPieces = lines.reduce((s: number, l: any) => s + (l.totalPieces || 0), 0);
+
+  return (
+    <Dialog open={!!invoiceId} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <FileSpreadsheet className="w-5 h-5 text-primary" />
+            تفاصيل الفاتورة
+            {inv && <span className="font-mono text-muted-foreground">- {inv.referenceNumber}</span>}
+          </DialogTitle>
+          <DialogDescription>عرض بيانات الفاتورة وبنودها</DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-3 py-4">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : inv ? (
+          <div className="space-y-5">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-muted/30 p-4 rounded-lg">
+              <div>
+                <p className="text-xs text-muted-foreground">رقم الفاتورة</p>
+                <p className="font-mono font-semibold">{inv.referenceNumber}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">التاريخ</p>
+                <p>{formatDate(inv.invoiceDate)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">النوع</p>
+                <Badge variant={inv.invoiceKind === "purchase" ? "default" : "secondary"}>
+                  {inv.invoiceKind === "purchase" ? "شراء" : inv.invoiceKind === "sale" ? "بيع" : "مرتجع"}
+                </Badge>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">الحالة</p>
+                {getStatusBadge(inv.status)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{lines.length}</div>
+                <div className="text-xs text-muted-foreground">عدد البنود</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{totalCartons.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">الكراتين</div>
+              </Card>
+              <Card className="p-3 text-center">
+                <div className="text-xl font-bold">{totalPieces.toLocaleString("ar-EG")}</div>
+                <div className="text-xs text-muted-foreground">القطع</div>
+              </Card>
+              <Card className="p-3 text-center bg-primary/5">
+                <div className="text-xl font-bold text-primary">{formatCurrency(inv.totalEgp)}</div>
+                <div className="text-xs text-muted-foreground">الإجمالي (ج.م)</div>
+              </Card>
+            </div>
+
+            <div className="grid grid-cols-3 gap-3">
+              <div className="p-3 rounded-lg bg-green-50 border border-green-200 text-center">
+                <p className="text-xs text-muted-foreground mb-1">المدفوع</p>
+                <p className="font-mono font-semibold text-green-700">{formatCurrency(inv.paidAmount || '0')} ج.م</p>
+              </div>
+              <div className="p-3 rounded-lg bg-orange-50 border border-orange-200 text-center">
+                <p className="text-xs text-muted-foreground mb-1">المتبقي</p>
+                <p className="font-mono font-semibold text-orange-700">{formatCurrency(inv.remainingAmount || inv.totalEgp)} ج.م</p>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/30 text-center">
+                <p className="text-xs text-muted-foreground mb-1">حالة السداد</p>
+                {inv.paymentStatus === 'paid' ? (
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100">مسدد بالكامل</Badge>
+                ) : inv.paymentStatus === 'partial' ? (
+                  <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">مسدد جزئياً</Badge>
+                ) : (
+                  <Badge variant="outline">غير مسدد</Badge>
+                )}
+              </div>
+            </div>
+
+            {lines.length > 0 && (
+              <div>
+                <p className="font-semibold mb-2 text-sm">بنود الفاتورة</p>
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-right text-xs">المنتج</TableHead>
+                        <TableHead className="text-right text-xs">الكراتين</TableHead>
+                        <TableHead className="text-right text-xs">القطع</TableHead>
+                        <TableHead className="text-right text-xs">سعر الوحدة</TableHead>
+                        <TableHead className="text-right text-xs">الإجمالي</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {lines.map((line: any, idx: number) => (
+                        <TableRow key={line.id || idx}>
+                          <TableCell className="text-sm font-medium">{line.productName}</TableCell>
+                          <TableCell className="font-mono text-sm">{line.cartons}</TableCell>
+                          <TableCell className="font-mono text-sm">{line.totalPieces}</TableCell>
+                          <TableCell className="font-mono text-sm">{formatCurrency(line.unitPriceEgp)} ج.م</TableCell>
+                          <TableCell className="font-mono text-sm font-semibold">{formatCurrency(line.lineTotalEgp)} ج.م</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {inv.notes && (
+              <div className="p-3 rounded-lg bg-muted/30 text-sm">
+                <span className="font-semibold">ملاحظات: </span>{inv.notes}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-center py-8 text-muted-foreground">لا يمكن تحميل الفاتورة</p>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ReceiveInvoiceDialogLocal({
+  invoiceId,
+  onClose,
+}: {
+  invoiceId: number | null;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useLocalInvoice(invoiceId || 0);
+  const receiveInvoice = useReceiveInvoice();
+  const { toast } = useToast();
+  const [notes, setNotes] = useState("");
+  const [lineReceipts, setLineReceipts] = useState<Record<number, number>>({});
+
+  const invoiceData = data as { invoice: any; lines: any[] } | undefined;
+  const inv = invoiceData?.invoice;
+  const lines = invoiceData?.lines || [];
+
+  useEffect(() => {
+    if (lines.length > 0) {
+      const initial: Record<number, number> = {};
+      lines.forEach((l: any) => { if (l.id !== undefined) initial[l.id] = l.totalPieces; });
+      setLineReceipts(initial);
+    }
+  }, [lines.length]);
+
+  const totalShortage = lines.reduce((sum: number, line: any) => {
+    const received = lineReceipts[line.id] ?? line.totalPieces;
+    return sum + (line.totalPieces - received);
+  }, 0);
+
+  const handleSubmit = () => {
+    if (!invoiceId) return;
+    const receiptsArray = Object.entries(lineReceipts).map(([lineId, receivedPieces]) => ({
+      lineId: parseInt(lineId),
+      receivedPieces,
+    }));
+    receiveInvoice.mutate(
+      { id: invoiceId, data: { notes: notes || null, lineReceipts: receiptsArray } },
+      {
+        onSuccess: () => {
+          toast({ title: "تم الاستلام بنجاح" });
+          setNotes("");
+          setLineReceipts({});
+          onClose();
+        },
+        onError: (err: any) => {
+          toast({ title: "خطأ في الاستلام", description: err.message, variant: "destructive" });
+        },
+      }
+    );
+  };
+
+  return (
+    <Dialog open={!!invoiceId} onOpenChange={(open) => { if (!open) { setNotes(""); setLineReceipts({}); onClose(); } }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto" dir="rtl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="w-5 h-5 text-primary" />
+            استلام الفاتورة
+            {inv && <span className="font-mono text-muted-foreground">- {inv.referenceNumber}</span>}
+          </DialogTitle>
+          <DialogDescription>أدخل الكميات المستلمة فعلياً لكل بند</DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="space-y-3 py-4">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {totalShortage > 0 && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                <AlertTriangle className="w-4 h-4" />
+                سيتم إنشاء {totalShortage} قيد هامش تلقائياً للنواقص
+              </div>
+            )}
+
+            {lines.length > 0 ? (
+              <div className="border rounded-lg overflow-hidden">
+                <div className="grid grid-cols-12 gap-2 p-3 bg-muted/50 border-b text-xs font-medium text-muted-foreground">
+                  <div className="col-span-4">المنتج</div>
+                  <div className="col-span-2 text-center">المطلوب</div>
+                  <div className="col-span-3 text-center">المستلم</div>
+                  <div className="col-span-3 text-center">النواقص</div>
+                </div>
+                {lines.map((line: any, idx: number) => {
+                  const lineId = line.id as number;
+                  const received = lineReceipts[lineId] ?? line.totalPieces;
+                  const shortage = line.totalPieces - received;
+                  return (
+                    <div key={line.id || idx} className={`grid grid-cols-12 gap-2 p-3 items-center border-b last:border-b-0 ${shortage > 0 ? "bg-destructive/5" : ""}`}>
+                      <div className="col-span-4 flex items-center gap-2">
+                        {line.imageUrl ? (
+                          <img src={line.imageUrl} className="w-8 h-8 object-cover rounded border" alt="" />
+                        ) : (
+                          <div className="w-8 h-8 rounded border bg-muted flex items-center justify-center">
+                            <Camera className="w-3 h-3 text-muted-foreground" />
+                          </div>
+                        )}
+                        <span className="text-sm font-medium truncate">{line.productName}</span>
+                      </div>
+                      <div className="col-span-2 text-center font-mono text-sm">{line.totalPieces}</div>
+                      <div className="col-span-3">
+                        <Input
+                          type="number"
+                          min={0}
+                          max={line.totalPieces}
+                          value={received}
+                          onChange={(e) => {
+                            const val = Math.max(0, Math.min(parseInt(e.target.value) || 0, line.totalPieces));
+                            setLineReceipts(prev => ({ ...prev, [lineId]: val }));
+                          }}
+                          className={`h-8 text-sm text-center font-mono ${shortage > 0 ? "border-destructive" : ""}`}
+                        />
+                      </div>
+                      <div className="col-span-3 text-center">
+                        {shortage > 0 ? (
+                          <Badge variant="destructive" className="text-xs">{shortage} ناقص</Badge>
+                        ) : (
+                          <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">
+                            <CheckCircle className="w-3 h-3 ml-1" />تمام
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-center py-4 text-muted-foreground text-sm">لا توجد بنود في هذه الفاتورة</p>
+            )}
+
+            <div>
+              <Label>ملاحظات (اختياري)</Label>
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="أي ملاحظات عن الاستلام..."
+                className="mt-1"
+                rows={2}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={onClose}>إلغاء</Button>
+              <Button onClick={handleSubmit} disabled={receiveInvoice.isPending || lines.length === 0}>
+                {receiveInvoice.isPending ? "جارٍ الحفظ..." : "تأكيد الاستلام"}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function InvoicesTab({
   invoices,
   isLoading,
@@ -1199,6 +1507,7 @@ function InvoicesTab({
   kindFilter,
   setKindFilter,
   partyId,
+  partyType,
   onNewInvoice,
 }: {
   invoices: Invoice[];
@@ -1208,22 +1517,27 @@ function InvoicesTab({
   kindFilter: string;
   setKindFilter: (value: string) => void;
   partyId: number;
+  partyType?: string;
   onNewInvoice: () => void;
 }) {
+  const [viewInvoiceId, setViewInvoiceId] = useState<number | null>(null);
+  const [receiveInvoiceId, setReceiveInvoiceId] = useState<number | null>(null);
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-4">
         <div className="flex items-center gap-2">
           <Label>الحالة:</Label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-36">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">الكل</SelectItem>
-              <SelectItem value="pending">معلقة</SelectItem>
-              <SelectItem value="partial">مستلمة جزئياً</SelectItem>
+              <SelectItem value="draft">مسودة</SelectItem>
               <SelectItem value="received">مستلمة</SelectItem>
+              <SelectItem value="partially_received">مستلمة جزئياً</SelectItem>
+              <SelectItem value="cancelled">ملغاة</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -1236,6 +1550,7 @@ function InvoicesTab({
             <SelectContent>
               <SelectItem value="all">الكل</SelectItem>
               <SelectItem value="purchase">شراء</SelectItem>
+              <SelectItem value="sale">بيع</SelectItem>
               <SelectItem value="return">مرتجع</SelectItem>
             </SelectContent>
           </Select>
@@ -1265,38 +1580,65 @@ function InvoicesTab({
                 <TableHead className="text-right">المتبقي</TableHead>
                 <TableHead className="text-right">حالة السداد</TableHead>
                 <TableHead className="text-right">الحالة</TableHead>
+                <TableHead className="text-right">إجراءات</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {invoices.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                     لا توجد فواتير
                   </TableCell>
                 </TableRow>
               ) : (
                 invoices.map((invoice: any) => (
-                  <TableRow key={invoice.id}>
-                    <TableCell className="font-mono">{invoice.invoiceNumber || invoice.referenceNumber}</TableCell>
-                    <TableCell>{formatDate(invoice.invoiceDate)}</TableCell>
+                  <TableRow key={invoice.id} className="hover:bg-muted/30">
+                    <TableCell className="font-mono text-sm">{invoice.referenceNumber || invoice.invoiceNumber}</TableCell>
+                    <TableCell className="text-sm">{formatDate(invoice.invoiceDate)}</TableCell>
                     <TableCell>
-                      <Badge variant={invoice.invoiceKind === "purchase" ? "default" : "secondary"}>
+                      <Badge variant={invoice.invoiceKind === "purchase" ? "default" : invoice.invoiceKind === "sale" ? "secondary" : "outline"}>
                         {invoice.invoiceKind === "purchase" ? "شراء" : invoice.invoiceKind === "sale" ? "بيع" : "مرتجع"}
                       </Badge>
                     </TableCell>
-                    <TableCell className="font-mono">{formatCurrency(invoice.totalEgp)} ج.م</TableCell>
-                    <TableCell className="font-mono text-green-600">{formatCurrency(invoice.paidAmount || '0')} ج.م</TableCell>
-                    <TableCell className="font-mono text-orange-600">{formatCurrency(invoice.remainingAmount || invoice.totalEgp)} ج.م</TableCell>
+                    <TableCell className="font-mono text-sm">{formatCurrency(invoice.totalEgp)} ج.م</TableCell>
+                    <TableCell className="font-mono text-sm text-green-600">{formatCurrency(invoice.paidAmount || '0')} ج.م</TableCell>
+                    <TableCell className="font-mono text-sm text-orange-600">{formatCurrency(invoice.remainingAmount || invoice.totalEgp)} ج.م</TableCell>
                     <TableCell>
                       {invoice.paymentStatus === 'paid' ? (
-                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100">مسدد</Badge>
+                        <Badge className="bg-green-100 text-green-800 hover:bg-green-100 text-xs">مسدد</Badge>
                       ) : invoice.paymentStatus === 'partial' ? (
-                        <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">جزئي</Badge>
+                        <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100 text-xs">جزئي</Badge>
                       ) : (
-                        <Badge variant="outline">غير مسدد</Badge>
+                        <Badge variant="outline" className="text-xs">غير مسدد</Badge>
                       )}
                     </TableCell>
                     <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={() => setViewInvoiceId(invoice.id)}
+                          title="عرض تفاصيل الفاتورة"
+                        >
+                          <Eye className="w-3.5 h-3.5 ml-1" />
+                          عرض
+                        </Button>
+                        {invoice.invoiceKind === "purchase" && invoice.status === "draft" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            onClick={() => setReceiveInvoiceId(invoice.id)}
+                            title="استلام الفاتورة"
+                          >
+                            <Package className="w-3.5 h-3.5 ml-1" />
+                            استلام
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -1304,6 +1646,15 @@ function InvoicesTab({
           </Table>
         </div>
       )}
+
+      <ViewInvoiceDialog
+        invoiceId={viewInvoiceId}
+        onClose={() => setViewInvoiceId(null)}
+      />
+      <ReceiveInvoiceDialogLocal
+        invoiceId={receiveInvoiceId}
+        onClose={() => setReceiveInvoiceId(null)}
+      />
     </div>
   );
 }

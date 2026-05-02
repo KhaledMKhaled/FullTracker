@@ -4262,7 +4262,7 @@ export class DatabaseStorage implements IStorage {
           .where(
             and(
               eq(localInvoices.partyId, data.partyId),
-              sql`${localInvoices.status} NOT IN ('draft', 'archived')`
+              sql`${localInvoices.status} NOT IN ('cancelled', 'archived')`
             )
           )
           .groupBy(localInvoices.id)
