@@ -891,7 +891,8 @@ export interface IStorage {
   // ============================================================
 
   // Parties
-  getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<Party[]>;
+  getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<(Party & { currentBalance: string })[]>;
+  getPartyLedgerEntries(partyId: number, seasonId?: number): Promise<Array<{ id: number; entryDate: string; description: string; debitEgp: string; creditEgp: string; balanceEgp: string; referenceType: string | null; referenceId: number | null }>>;
   getParty(id: number): Promise<Party | undefined>;
   createParty(data: InsertParty): Promise<Party>;
   updateParty(id: number, data: Partial<InsertParty>): Promise<Party | undefined>;
@@ -3681,8 +3682,7 @@ export class DatabaseStorage implements IStorage {
   // ============================================================
 
   // Parties
-  async getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<Party[]> {
-    let query = db.select().from(parties);
+  async getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<(Party & { currentBalance: string })[]> {
     const conditions: any[] = [];
 
     if (filters?.type) {
@@ -3692,11 +3692,57 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(parties.isActive, filters.isActive));
     }
 
+    let partiesQuery = db.select().from(parties);
     if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
+      partiesQuery = partiesQuery.where(and(...conditions)) as any;
+    }
+    const partiesList = await partiesQuery.orderBy(desc(parties.createdAt));
+
+    const balanceSums = await db
+      .select({
+        partyId: partyLedgerEntries.partyId,
+        total: sql<string>`COALESCE(SUM(${partyLedgerEntries.amountEgp}), '0')`,
+      })
+      .from(partyLedgerEntries)
+      .groupBy(partyLedgerEntries.partyId);
+
+    const balanceMap = new Map(balanceSums.map((b) => [b.partyId, b.total]));
+
+    return partiesList.map((p) => ({
+      ...p,
+      currentBalance: balanceMap.get(p.id) || "0",
+    }));
+  }
+
+  async getPartyLedgerEntries(partyId: number, seasonId?: number): Promise<Array<{ id: number; entryDate: string; description: string; debitEgp: string; creditEgp: string; balanceEgp: string; referenceType: string | null; referenceId: number | null }>> {
+    const conditions: any[] = [eq(partyLedgerEntries.partyId, partyId)];
+    if (seasonId !== undefined) {
+      conditions.push(eq(partyLedgerEntries.seasonId, seasonId));
     }
 
-    return query.orderBy(desc(parties.createdAt));
+    const entries = await db
+      .select()
+      .from(partyLedgerEntries)
+      .where(and(...conditions))
+      .orderBy(asc(partyLedgerEntries.createdAt));
+
+    let runningBalance = 0;
+    return entries.map((entry) => {
+      const amount = parseFloat(entry.amountEgp || "0");
+      runningBalance += amount;
+      const debit = amount > 0 ? amount : 0;
+      const credit = amount < 0 ? Math.abs(amount) : 0;
+      return {
+        id: entry.id,
+        entryDate: entry.createdAt ? entry.createdAt.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
+        description: entry.note || "-",
+        debitEgp: debit.toFixed(2),
+        creditEgp: credit.toFixed(2),
+        balanceEgp: runningBalance.toFixed(2),
+        referenceType: entry.entryType || null,
+        referenceId: entry.sourceId || null,
+      };
+    });
   }
 
   async getParty(id: number): Promise<Party | undefined> {
@@ -4216,7 +4262,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReturnCase(data: InsertReturnCase): Promise<ReturnCase> {
-    const [returnCase] = await db.insert(returnCases).values(data).returning();
+    const [returnCase] = await db.insert(returnCases).values(data as any).returning();
     return returnCase;
   }
 

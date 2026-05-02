@@ -48,6 +48,14 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **May 2026**: Fixed Opening Balance (رصيد افتتاحي) bugs in Local Trade Module
+  - `currentBalance` in party profile now reads from ledger (via `profile.balance`) instead of non-existent `partyData.currentBalance` field (was always 0)
+  - Added `/api/local-trade/parties/:id/ledger` endpoint returning formatted ledger entries with running balance
+  - Added `usePartyLedger` hook; كشف الحساب tab now shows actual entries instead of empty
+  - `getAllParties` now computes real `currentBalance` from ledger entries (JOIN with party_ledger_entries); parties list shows correct current balance with direction (عليه/له)
+  - Fixed `amountEgp` sent as number instead of string in two payment locations (collection payment + payment dialog)
+  - Fixed `partyTypeSnapshot` required validation error when creating return cases (schema now marks it optional; server sets it after fetching party)
+  - Fixed `CreatePartyReturnDialog` sending wrong field names (`invoiceId`→`sourceInvoiceId`, `description`→`notes`)
 - **January 2026**: Fixed Invoice Form Navigation
   - Clicking "فاتورة جديدة" from party profile now navigates to the new invoice creation page
   - Pre-selects the party and automatically sets invoice type based on party type

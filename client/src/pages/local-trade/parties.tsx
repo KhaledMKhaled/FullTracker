@@ -540,15 +540,20 @@ export default function PartiesPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className={
-                        parseFloat(party.currentBalance || party.openingBalanceEgp) > 0
-                          ? "text-green-600"
-                          : parseFloat(party.currentBalance || party.openingBalanceEgp) < 0
-                          ? "text-red-600"
-                          : ""
-                      }>
-                        {formatCurrency(party.currentBalance || party.openingBalanceEgp)} ج.م
-                      </span>
+                      {(() => {
+                        const raw = parseFloat(party.currentBalance || "0");
+                        const abs = Math.abs(raw);
+                        const isDebit = raw > 0;
+                        const isCredit = raw < 0;
+                        return (
+                          <span className={isDebit ? "text-red-600" : isCredit ? "text-green-600" : ""}>
+                            {formatCurrency(abs.toFixed(2))} ج.م
+                            {raw !== 0 && (
+                              <span className="text-xs mr-1">({isDebit ? "عليه" : "له"})</span>
+                            )}
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>
                       <Badge

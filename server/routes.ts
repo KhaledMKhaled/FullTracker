@@ -2699,6 +2699,19 @@ export async function registerRoutes(
     }
   });
 
+  // Party Ledger Route
+  app.get("/api/local-trade/parties/:id/ledger", isAuthenticated, async (req, res) => {
+    try {
+      const partyId = parseInt(req.params.id);
+      const seasonId = req.query.seasonId ? parseInt(req.query.seasonId as string) : undefined;
+      const entries = await routeStorage.getPartyLedgerEntries(partyId, seasonId);
+      res.json(entries);
+    } catch (error) {
+      console.error("Error fetching party ledger:", error);
+      res.status(500).json({ message: "خطأ في جلب دفتر الملف" });
+    }
+  });
+
   // Party Seasons Routes
   app.get("/api/local-trade/parties/:id/seasons", isAuthenticated, async (req, res) => {
     try {

@@ -64,6 +64,22 @@ export function usePartyProfile(id: number) {
   });
 }
 
+export function usePartyLedger(id: number, seasonId?: number) {
+  const params = new URLSearchParams();
+  if (seasonId) params.set("seasonId", String(seasonId));
+  const queryString = params.toString();
+
+  return useQuery({
+    queryKey: ["/api/local-trade/parties", id, "ledger", seasonId],
+    queryFn: async () => {
+      const res = await fetch(`/api/local-trade/parties/${id}/ledger${queryString ? `?${queryString}` : ""}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch party ledger");
+      return res.json();
+    },
+    enabled: !!id,
+  });
+}
+
 export function useCreateParty() {
   return useMutation({
     mutationFn: async (data: Record<string, unknown>) => {

@@ -62,6 +62,7 @@ import {
   useParty,
   usePartyProfile,
   usePartyProfileSummary,
+  usePartyLedger,
   useUpdateParty,
   useDeleteParty,
   useLocalInvoices,
@@ -280,6 +281,7 @@ export default function PartyProfilePage() {
   const { data: party, isLoading: isLoadingParty } = useParty(partyId);
   const { data: profile } = usePartyProfile(partyId);
   const { data: summary } = usePartyProfileSummary(partyId);
+  const { data: ledgerData } = usePartyLedger(partyId);
   
   const invoiceFilters = {
     partyId,
@@ -326,7 +328,7 @@ export default function PartyProfilePage() {
   const markReminderMutation = useMarkCollectionReminder();
 
   const partyData = party as Party | undefined;
-  const ledgerEntries = (profile as { ledger?: LedgerEntry[] })?.ledger || [];
+  const ledgerEntries = (ledgerData as LedgerEntry[]) || [];
 
   if (isLoadingParty) {
     return (
@@ -354,7 +356,15 @@ export default function PartyProfilePage() {
     );
   }
 
-  const currentBalance = parseFloat(partyData.currentBalance || "0");
+  const profileData = profile as { balance?: { balanceEgp: string; direction: string } } | undefined;
+  const balanceInfo = profileData?.balance;
+  const currentBalance = balanceInfo
+    ? (balanceInfo.direction === "debit"
+        ? parseFloat(balanceInfo.balanceEgp)
+        : balanceInfo.direction === "credit"
+        ? -parseFloat(balanceInfo.balanceEgp)
+        : 0)
+    : 0;
   const isDebit = currentBalance > 0;
   const isCredit = currentBalance < 0;
 
@@ -1442,7 +1452,7 @@ function CreatePartyReturnDialog({
 
   const handleSubmit = () => {
     if (!invoiceId || !description.trim()) return;
-    onSubmit({ partyId, invoiceId, description: description.trim() });
+    onSubmit({ partyId, sourceInvoiceId: invoiceId, notes: description.trim() });
   };
 
   const resetForm = () => {
@@ -1901,7 +1911,7 @@ function CollectionsTab({
         body: JSON.stringify({
           partyId: partyId,
           paymentDate: paymentDate,
-          amountEgp: parseFloat(paymentAmount),
+          amountEgp: paymentAmount.toString(),
           paymentMethod: paymentMethod,
           notes: paymentNote || `تحصيل مجدول`,
           linkedCollectionId: collectionForPayment.id,
@@ -2509,7 +2519,7 @@ function PaymentDialog({
     onSubmit({
       partyId,
       paymentDate,
-      amountEgp: parseFloat(amount),
+      amountEgp: amount.toString(),
       paymentMethod,
       notes: notes || null,
       invoiceId: selectedInvoiceId ? parseInt(selectedInvoiceId) : null,

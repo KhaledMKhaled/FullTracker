@@ -747,7 +747,9 @@ export const insertLocalInvoiceLineSchema = createInsertSchema(localInvoiceLines
 export const insertLocalReceiptSchema = createInsertSchema(localReceipts).omit({ createdAt: true });
 export const insertPartyLedgerEntrySchema = createInsertSchema(partyLedgerEntries).omit({ createdAt: true });
 export const insertLocalPaymentSchema = createInsertSchema(localPayments).omit({ createdAt: true });
-export const insertReturnCaseSchema = createInsertSchema(returnCases).omit({ createdAt: true, updatedAt: true });
+export const insertReturnCaseSchema = createInsertSchema(returnCases).omit({ createdAt: true, updatedAt: true }).extend({
+  partyTypeSnapshot: z.string().optional(),
+});
 export const insertPartyCollectionSchema = createInsertSchema(partyCollections).omit({ createdAt: true, updatedAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ createdAt: true });
 
