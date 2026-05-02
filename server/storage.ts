@@ -4064,12 +4064,48 @@ export class DatabaseStorage implements IStorage {
     return results.map(mapRow);
   }
 
-  async getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice; lines: LocalInvoiceLine[] } | undefined> {
+  async getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice & { paidAmount: string; remainingAmount: string; paymentStatus: string }; lines: LocalInvoiceLine[] } | undefined> {
     const [invoice] = await db.select().from(localInvoices).where(eq(localInvoices.id, id));
     if (!invoice) return undefined;
 
     const lines = await this.getInvoiceLines(id);
-    return { invoice, lines };
+
+    // Calculate paidAmount using same correlated SQL as getAllLocalInvoicesWithPayments
+    const [paidRow] = await db.execute(sql`
+      SELECT 
+        (
+          SELECT COALESCE(SUM(lia.amount_egp), 0)
+          FROM local_invoice_allocations lia
+          WHERE lia.invoice_id = ${id}
+        ) + (
+          SELECT COALESCE(SUM(lp.amount_egp), 0)
+          FROM local_payments lp
+          WHERE lp.invoice_id = ${id}
+          AND NOT EXISTS (
+            SELECT 1 FROM local_invoice_allocations lia2
+            WHERE lia2.payment_id = lp.id AND lia2.invoice_id = ${id}
+          )
+        ) AS paid_amount
+    `);
+    const paidAmount = parseFloat((paidRow as any)?.paid_amount || '0');
+    const totalAmount = parseFloat(invoice.totalEgp?.toString() || '0');
+    const remainingAmount = Math.max(0, totalAmount - paidAmount);
+    let paymentStatus = 'unpaid';
+    if (paidAmount > 0 && paidAmount >= totalAmount && totalAmount > 0) {
+      paymentStatus = 'paid';
+    } else if (paidAmount > 0) {
+      paymentStatus = 'partial';
+    }
+
+    return {
+      invoice: {
+        ...invoice,
+        paidAmount: paidAmount.toFixed(2),
+        remainingAmount: remainingAmount.toFixed(2),
+        paymentStatus,
+      },
+      lines,
+    };
   }
 
   async createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice> {
