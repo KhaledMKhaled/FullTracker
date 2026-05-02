@@ -231,6 +231,9 @@ export function useResolveReturnCase() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/return-cases"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/payments"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
     },
   });
 }

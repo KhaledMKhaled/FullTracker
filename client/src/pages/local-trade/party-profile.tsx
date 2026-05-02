@@ -73,6 +73,7 @@ import {
   useCreateLocalInvoice,
   useCreateSettlement,
   useCreateReturnCase,
+  useResolveReturnCase,
   usePartyCollections,
   usePartyTimeline,
   useUpsertPartyCollections,
@@ -244,11 +245,23 @@ function getStatusBadge(status: string) {
 function getReturnStatusBadge(status: string) {
   switch (status) {
     case "pending":
-      return <Badge variant="secondary">معلقة</Badge>;
+    case "under_inspection":
+      return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">تحت الفحص</Badge>;
     case "resolved":
-      return <Badge variant="default" className="bg-green-600">تم الحل</Badge>;
+      return <Badge variant="default" className="bg-green-600 text-white">تم الحل</Badge>;
     default:
       return <Badge variant="secondary">{status}</Badge>;
+  }
+}
+
+function getResolutionLabel(resolution: string | null) {
+  switch (resolution) {
+    case "accepted_return": return "إرجاع مقبول";
+    case "exchange": return "استبدال";
+    case "deduct_value": return "خصم قيمة";
+    case "damaged": return "شطب تالف";
+    case "rejected": return "مرفوض";
+    default: return "-";
   }
 }
 
@@ -264,6 +277,8 @@ export default function PartyProfilePage() {
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isCreateReturnDialogOpen, setIsCreateReturnDialogOpen] = useState(false);
+  const [isResolveReturnDialogOpen, setIsResolveReturnDialogOpen] = useState(false);
+  const [selectedReturnCase, setSelectedReturnCase] = useState<any | null>(null);
   
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("all");
   const [invoiceKindFilter, setInvoiceKindFilter] = useState<string>("all");
@@ -316,6 +331,7 @@ export default function PartyProfilePage() {
   const createSettlementMutation = useCreateSettlement();
   const createInvoiceMutation = useCreateLocalInvoice();
   const createReturnMutation = useCreateReturnCase();
+  const resolveReturnMutation = useResolveReturnCase();
   
   const { data: productTypes } = useQuery<ProductType[]>({
     queryKey: ["/api/product-types"],
@@ -615,20 +631,25 @@ export default function PartyProfilePage() {
 
         <TabsContent value="payments" className="mt-6">
           <PaymentsTab
-            payments={(payments as Payment[]) || []}
+            payments={(payments as any[]) || []}
             isLoading={isLoadingPayments}
             onNewPayment={() => setIsPaymentDialogOpen(true)}
-            invoices={invoices as any[]}
+            invoices={(invoices as any[]) || []}
           />
         </TabsContent>
 
         <TabsContent value="returns" className="mt-6">
           <ReturnsTab
-            returnCases={(returnCases as ReturnCase[]) || []}
+            returnCases={(returnCases as any[]) || []}
             isLoading={isLoadingReturns}
             statusFilter={returnStatusFilter}
             setStatusFilter={setReturnStatusFilter}
             onAddReturn={() => setIsCreateReturnDialogOpen(true)}
+            invoices={(invoices as any[]) || []}
+            onResolve={(rc) => {
+              setSelectedReturnCase(rc);
+              setIsResolveReturnDialogOpen(true);
+            }}
           />
         </TabsContent>
 
@@ -719,6 +740,28 @@ export default function PartyProfilePage() {
           });
         }}
         isLoading={createReturnMutation.isPending}
+      />
+
+      <ResolveReturnCaseDialog
+        open={isResolveReturnDialogOpen}
+        onOpenChange={(v) => {
+          setIsResolveReturnDialogOpen(v);
+          if (!v) setSelectedReturnCase(null);
+        }}
+        returnCase={selectedReturnCase}
+        isLoading={resolveReturnMutation.isPending}
+        onSubmit={(id, data) => {
+          resolveReturnMutation.mutate({ id, data }, {
+            onSuccess: () => {
+              toast({ title: "تم تسوية حالة الهامش بنجاح" });
+              setIsResolveReturnDialogOpen(false);
+              setSelectedReturnCase(null);
+            },
+            onError: (error) => {
+              toast({ title: getErrorMessage(error), variant: "destructive" });
+            },
+          });
+        }}
       />
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -1271,13 +1314,13 @@ function PaymentsTab({
   onNewPayment,
   invoices,
 }: {
-  payments: Payment[];
+  payments: any[];
   isLoading: boolean;
   onNewPayment: () => void;
   invoices?: any[];
 }) {
   // Create a map of invoice ID to reference number for quick lookup
-  const invoiceMap = new Map((invoices || []).map((inv: any) => [inv.id, inv.referenceNumber]));
+  const invoiceMap = new Map((invoices || []).map((inv: any) => [inv.id, inv]));
 
   return (
     <div className="space-y-4">
@@ -1302,7 +1345,7 @@ function PaymentsTab({
                 <TableHead className="text-right">التاريخ</TableHead>
                 <TableHead className="text-right">المبلغ</TableHead>
                 <TableHead className="text-right">طريقة الدفع</TableHead>
-                <TableHead className="text-right">الفاتورة المرتبطة</TableHead>
+                <TableHead className="text-right">الفواتير المسددة (FIFO)</TableHead>
                 <TableHead className="text-right">ملاحظات</TableHead>
               </TableRow>
             </TableHeader>
@@ -1314,26 +1357,41 @@ function PaymentsTab({
                   </TableCell>
                 </TableRow>
               ) : (
-                payments.map((payment: any) => (
-                  <TableRow key={payment.id}>
-                    <TableCell>{formatDate(payment.paymentDate)}</TableCell>
-                    <TableCell className="font-mono">{formatCurrency(payment.amountEgp)} ج.م</TableCell>
-                    <TableCell>
-                      {payment.paymentMethod === "cash" ? "نقداً" : 
-                       payment.paymentMethod === "bank" ? "تحويل بنكي" : payment.paymentMethod}
-                    </TableCell>
-                    <TableCell className="font-mono">
-                      {payment.invoiceId ? (
-                        <Badge variant="outline" className="text-xs">
-                          {invoiceMap.get(payment.invoiceId) || `#${payment.invoiceId}`}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{payment.notes || "-"}</TableCell>
-                  </TableRow>
-                ))
+                payments.map((payment: any) => {
+                  const allocations: any[] = payment.allocations || [];
+                  return (
+                    <TableRow key={payment.id}>
+                      <TableCell>{formatDate(payment.paymentDate)}</TableCell>
+                      <TableCell className="font-mono font-semibold">{formatCurrency(payment.amountEgp)} ج.م</TableCell>
+                      <TableCell>{payment.paymentMethod || "نقدي"}</TableCell>
+                      <TableCell>
+                        {allocations.length === 0 ? (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {allocations.map((alloc: any) => {
+                              const inv = invoiceMap.get(alloc.invoiceId);
+                              const label = inv ? inv.referenceNumber : `#${alloc.invoiceId}`;
+                              return (
+                                <span
+                                  key={alloc.id}
+                                  className="inline-flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-1.5 py-0.5 text-xs text-blue-700"
+                                  title={`${formatCurrency(alloc.amountEgp)} ج.م`}
+                                >
+                                  {label}
+                                  <span className="font-mono text-blue-500">
+                                    {formatCurrency(alloc.amountEgp)}
+                                  </span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{payment.notes || "-"}</TableCell>
+                    </TableRow>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -1349,13 +1407,19 @@ function ReturnsTab({
   statusFilter,
   setStatusFilter,
   onAddReturn,
+  invoices,
+  onResolve,
 }: {
-  returnCases: ReturnCase[];
+  returnCases: any[];
   isLoading: boolean;
   statusFilter: string;
   setStatusFilter: (value: string) => void;
   onAddReturn: () => void;
+  invoices?: any[];
+  onResolve?: (rc: any) => void;
 }) {
+  const invoiceMap = new Map((invoices || []).map((inv: any) => [inv.id, inv.referenceNumber]));
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
@@ -1367,7 +1431,7 @@ function ReturnsTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">الكل</SelectItem>
-              <SelectItem value="pending">معلقة</SelectItem>
+              <SelectItem value="under_inspection">تحت الفحص</SelectItem>
               <SelectItem value="resolved">تم الحل</SelectItem>
             </SelectContent>
           </Select>
@@ -1389,36 +1453,61 @@ function ReturnsTab({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-right">رقم الفاتورة</TableHead>
-                <TableHead className="text-right">السبب</TableHead>
+                <TableHead className="text-right">الفاتورة المصدر</TableHead>
+                <TableHead className="text-right">الملاحظات</TableHead>
+                <TableHead className="text-right">القطع</TableHead>
                 <TableHead className="text-right">الحالة</TableHead>
                 <TableHead className="text-right">نوع الحل</TableHead>
-                <TableHead className="text-right">مبلغ التسوية</TableHead>
+                <TableHead className="text-right">مبلغ الهامش</TableHead>
                 <TableHead className="text-right">تاريخ الإنشاء</TableHead>
+                <TableHead className="text-right">إجراء</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {returnCases.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                     لا توجد حالات هوامش
                   </TableCell>
                 </TableRow>
               ) : (
-                returnCases.map((rc) => (
+                returnCases.map((rc: any) => (
                   <TableRow key={rc.id}>
-                    <TableCell className="font-mono">{rc.invoiceNumber || rc.invoiceId}</TableCell>
-                    <TableCell>{rc.reason}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {rc.sourceInvoiceId
+                        ? (invoiceMap.get(rc.sourceInvoiceId) || `#${rc.sourceInvoiceId}`)
+                        : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-32 truncate">{rc.notes || "—"}</TableCell>
+                    <TableCell className="font-mono text-xs">{rc.pieces || 0}</TableCell>
                     <TableCell>{getReturnStatusBadge(rc.status)}</TableCell>
                     <TableCell>
-                      {rc.resolutionType === "refund" ? "استرداد" :
-                       rc.resolutionType === "replacement" ? "استبدال" :
-                       rc.resolutionType === "credit" ? "رصيد" : "-"}
+                      {rc.status === 'resolved' ? (
+                        <span className="text-xs">{getResolutionLabel(rc.resolution)}</span>
+                      ) : <span className="text-muted-foreground">—</span>}
                     </TableCell>
                     <TableCell className="font-mono">
-                      {rc.resolutionAmountEgp ? `${formatCurrency(rc.resolutionAmountEgp)} ج.م` : "-"}
+                      {rc.status === 'resolved' && parseFloat(rc.amountEgp || '0') > 0
+                        ? <span className="text-green-700">{formatCurrency(rc.amountEgp)} ج.م</span>
+                        : <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell>{formatDate(rc.createdAt)}</TableCell>
+                    <TableCell className="text-xs">{formatDate(rc.createdAt)}</TableCell>
+                    <TableCell>
+                      {rc.status === 'under_inspection' && onResolve ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs h-7 px-2"
+                          onClick={() => onResolve(rc)}
+                        >
+                          تسوية
+                        </Button>
+                      ) : (
+                        rc.resolvedAt ? (
+                          <span className="text-xs text-muted-foreground">{formatDate(rc.resolvedAt)}</span>
+                        ) : null
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -1427,6 +1516,123 @@ function ReturnsTab({
         </div>
       )}
     </div>
+  );
+}
+
+function ResolveReturnCaseDialog({
+  open,
+  onOpenChange,
+  returnCase,
+  onSubmit,
+  isLoading,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  returnCase: any | null;
+  onSubmit: (id: number, data: Record<string, unknown>) => void;
+  isLoading: boolean;
+}) {
+  const [resolution, setResolution] = useState("deduct_value");
+  const [amountEgp, setAmountEgp] = useState("");
+  const [pieces, setPieces] = useState("");
+  const [cartons, setCartons] = useState("");
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    if (returnCase) {
+      setPieces(String(returnCase.pieces || ""));
+      setCartons(String(returnCase.cartons || ""));
+      setAmountEgp("");
+      setNote("");
+      setResolution("deduct_value");
+    }
+  }, [returnCase]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!returnCase) return;
+    onSubmit(returnCase.id, {
+      resolution,
+      amountEgp: parseFloat(amountEgp) || 0,
+      pieces: parseInt(pieces) || 0,
+      cartons: parseInt(cartons) || 0,
+      resolutionNote: note || null,
+    });
+  };
+
+  if (!returnCase) return null;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>تسوية حالة هامش</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="p-3 bg-muted rounded-lg text-sm space-y-1">
+            <p><span className="text-muted-foreground">الملاحظات:</span> {returnCase.notes || "—"}</p>
+            <p><span className="text-muted-foreground">القطع:</span> {returnCase.pieces || 0}</p>
+          </div>
+
+          <div className="space-y-2">
+            <Label>نوع التسوية *</Label>
+            <Select value={resolution} onValueChange={setResolution}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="deduct_value">خصم قيمة من الفاتورة</SelectItem>
+                <SelectItem value="accepted_return">إرجاع مقبول</SelectItem>
+                <SelectItem value="exchange">استبدال</SelectItem>
+                <SelectItem value="damaged">شطب تالف</SelectItem>
+                <SelectItem value="rejected">مرفوض</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {(resolution === "deduct_value" || resolution === "accepted_return") && (
+            <div className="space-y-2">
+              <Label>المبلغ (ج.م) *</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={amountEgp}
+                onChange={(e) => setAmountEgp(e.target.value)}
+                placeholder="0.00"
+                required
+              />
+              {resolution === "deduct_value" && returnCase.sourceInvoiceId && (
+                <p className="text-xs text-blue-600">سيتم خصم هذا المبلغ من رصيد الفاتورة المصدر تلقائياً</p>
+              )}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label>القطع</Label>
+              <Input type="number" min="0" value={pieces} onChange={(e) => setPieces(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>الكراتين</Label>
+              <Input type="number" min="0" value={cartons} onChange={(e) => setCartons(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>ملاحظات التسوية</Label>
+            <Textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} />
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>إلغاء</Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading ? "جاري التسوية..." : "تأكيد التسوية"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

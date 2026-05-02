@@ -719,6 +719,32 @@ export const returnCasesRelations = relations(returnCases, ({ one }) => ({
   }),
 }));
 
+// Local Invoice Allocations table (توزيع المدفوعات على الفواتير - FIFO)
+export const localInvoiceAllocations = pgTable("local_invoice_allocations", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  invoiceId: integer("invoice_id").references(() => localInvoices.id).notNull(),
+  amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }).notNull(),
+  sourceType: varchar("source_type", { length: 30 }).notNull(), // 'payment' | 'return_deduction'
+  paymentId: integer("payment_id").references(() => localPayments.id),
+  returnCaseId: integer("return_case_id").references(() => returnCases.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const localInvoiceAllocationsRelations = relations(localInvoiceAllocations, ({ one }) => ({
+  invoice: one(localInvoices, {
+    fields: [localInvoiceAllocations.invoiceId],
+    references: [localInvoices.id],
+  }),
+  payment: one(localPayments, {
+    fields: [localInvoiceAllocations.paymentId],
+    references: [localPayments.id],
+  }),
+  returnCase: one(returnCases, {
+    fields: [localInvoiceAllocations.returnCaseId],
+    references: [returnCases.id],
+  }),
+}));
+
 // Insert Schemas
 export const insertUserSchema = createInsertSchema(users).omit({ createdAt: true, updatedAt: true });
 export const insertSupplierSchema = createInsertSchema(suppliers).omit({ createdAt: true, updatedAt: true });
@@ -752,6 +778,7 @@ export const insertReturnCaseSchema = createInsertSchema(returnCases).omit({ cre
 });
 export const insertPartyCollectionSchema = createInsertSchema(partyCollections).omit({ createdAt: true, updatedAt: true });
 export const insertNotificationSchema = createInsertSchema(notifications).omit({ createdAt: true });
+export const insertLocalInvoiceAllocationSchema = createInsertSchema(localInvoiceAllocations).omit({ createdAt: true });
 
 // Types
 export type UpsertUser = typeof users.$inferInsert;
@@ -806,3 +833,5 @@ export type InsertPartyCollection = z.infer<typeof insertPartyCollectionSchema>;
 export type PartyCollection = typeof partyCollections.$inferSelect;
 export type InsertNotification = z.infer<typeof insertNotificationSchema>;
 export type Notification = typeof notifications.$inferSelect;
+export type InsertLocalInvoiceAllocation = z.infer<typeof insertLocalInvoiceAllocationSchema>;
+export type LocalInvoiceAllocation = typeof localInvoiceAllocations.$inferSelect;

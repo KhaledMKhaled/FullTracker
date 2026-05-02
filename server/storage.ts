@@ -25,6 +25,9 @@ import {
   returnCases,
   partyCollections,
   notifications,
+  localInvoiceAllocations,
+  type LocalInvoiceAllocation,
+  type InsertLocalInvoiceAllocation,
   type User,
   type UpsertUser,
   type Supplier,
@@ -938,8 +941,9 @@ export interface IStorage {
   recalculatePartyBalance(partyId: number, seasonId?: number): Promise<{ balanceEgp: string; direction: 'debit' | 'credit' | 'zero' }>;
 
   // Local Payments
-  getLocalPayments(filters?: { partyId?: number }): Promise<LocalPayment[]>;
+  getLocalPayments(filters?: { partyId?: number }): Promise<(LocalPayment & { allocations: LocalInvoiceAllocation[] })[]>;
   createLocalPayment(data: InsertLocalPayment): Promise<LocalPayment>;
+  getPaymentAllocations(paymentId: number): Promise<LocalInvoiceAllocation[]>;
 
   // Return Cases
   getReturnCases(filters?: { partyId?: number; status?: string }): Promise<ReturnCase[]>;
@@ -3898,43 +3902,21 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(localInvoices.status, filters.status));
     }
 
-    // Get invoices with aggregated payment amounts
+    // Use localInvoiceAllocations for accurate paid amounts (FIFO + return deductions)
     const invoicesQuery = db
       .select({
         invoice: localInvoices,
-        paidAmount: sql<string>`COALESCE(SUM(${localPayments.amountEgp}), 0)`,
+        paidAmount: sql<string>`COALESCE(SUM(${localInvoiceAllocations.amountEgp}), 0)`,
       })
       .from(localInvoices)
-      .leftJoin(localPayments, eq(localInvoices.id, localPayments.invoiceId))
+      .leftJoin(localInvoiceAllocations, eq(localInvoices.id, localInvoiceAllocations.invoiceId))
       .groupBy(localInvoices.id)
       .orderBy(desc(localInvoices.createdAt));
 
-    if (conditions.length > 0) {
-      const results = await (invoicesQuery.where(and(...conditions)) as any);
-      return results.map((row: any) => {
-        const totalAmount = parseFloat(row.invoice.totalEgp || '0');
-        const paidAmount = parseFloat(row.paidAmount || '0');
-        const remainingAmount = totalAmount - paidAmount;
-        let paymentStatus = 'unpaid';
-        if (paidAmount >= totalAmount && totalAmount > 0) {
-          paymentStatus = 'paid';
-        } else if (paidAmount > 0) {
-          paymentStatus = 'partial';
-        }
-        return {
-          ...row.invoice,
-          paidAmount: paidAmount.toFixed(2),
-          remainingAmount: remainingAmount.toFixed(2),
-          paymentStatus,
-        };
-      });
-    }
-
-    const results = await invoicesQuery;
-    return results.map((row: any) => {
+    const mapRow = (row: any) => {
       const totalAmount = parseFloat(row.invoice.totalEgp || '0');
       const paidAmount = parseFloat(row.paidAmount || '0');
-      const remainingAmount = totalAmount - paidAmount;
+      const remainingAmount = Math.max(0, totalAmount - paidAmount);
       let paymentStatus = 'unpaid';
       if (paidAmount >= totalAmount && totalAmount > 0) {
         paymentStatus = 'paid';
@@ -3947,7 +3929,15 @@ export class DatabaseStorage implements IStorage {
         remainingAmount: remainingAmount.toFixed(2),
         paymentStatus,
       };
-    });
+    };
+
+    if (conditions.length > 0) {
+      const results = await (invoicesQuery.where(and(...conditions)) as any);
+      return results.map(mapRow);
+    }
+
+    const results = await invoicesQuery;
+    return results.map(mapRow);
   }
 
   async getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice; lines: LocalInvoiceLine[] } | undefined> {
@@ -4204,14 +4194,39 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Local Payments
-  async getLocalPayments(filters?: { partyId?: number }): Promise<LocalPayment[]> {
+  async getLocalPayments(filters?: { partyId?: number }): Promise<(LocalPayment & { allocations: LocalInvoiceAllocation[] })[]> {
     let query = db.select().from(localPayments);
     
     if (filters?.partyId) {
       query = query.where(eq(localPayments.partyId, filters.partyId)) as any;
     }
 
-    return query.orderBy(desc(localPayments.createdAt));
+    const payments = await query.orderBy(desc(localPayments.createdAt));
+    
+    if (payments.length === 0) return [];
+    
+    const paymentIds = payments.map(p => p.id);
+    const allAllocations = await db
+      .select()
+      .from(localInvoiceAllocations)
+      .where(inArray(localInvoiceAllocations.paymentId, paymentIds));
+    
+    const allocByPayment = new Map<number, LocalInvoiceAllocation[]>();
+    for (const alloc of allAllocations) {
+      if (alloc.paymentId !== null) {
+        if (!allocByPayment.has(alloc.paymentId)) allocByPayment.set(alloc.paymentId, []);
+        allocByPayment.get(alloc.paymentId)!.push(alloc);
+      }
+    }
+    
+    return payments.map(p => ({ ...p, allocations: allocByPayment.get(p.id) || [] }));
+  }
+
+  async getPaymentAllocations(paymentId: number): Promise<LocalInvoiceAllocation[]> {
+    return db
+      .select()
+      .from(localInvoiceAllocations)
+      .where(eq(localInvoiceAllocations.paymentId, paymentId));
   }
 
   async createLocalPayment(data: InsertLocalPayment): Promise<LocalPayment> {
@@ -4232,6 +4247,43 @@ export class DatabaseStorage implements IStorage {
           note: description,
           createdByUserId: data.createdByUserId,
         });
+
+        // FIFO auto-settlement: distribute payment across oldest outstanding invoices first
+        let remaining = paymentAmount;
+
+        // Get all outstanding invoices for this party ordered oldest first
+        const outstandingRows = await tx
+          .select({
+            invoice: localInvoices,
+            allocated: sql<string>`COALESCE(SUM(${localInvoiceAllocations.amountEgp}), 0)`,
+          })
+          .from(localInvoices)
+          .leftJoin(localInvoiceAllocations, eq(localInvoices.id, localInvoiceAllocations.invoiceId))
+          .where(
+            and(
+              eq(localInvoices.partyId, data.partyId),
+              sql`${localInvoices.status} NOT IN ('draft', 'archived')`
+            )
+          )
+          .groupBy(localInvoices.id)
+          .orderBy(asc(localInvoices.invoiceDate), asc(localInvoices.id));
+
+        for (const row of outstandingRows) {
+          if (remaining <= 0.009) break;
+          const total = parseFloat((row.invoice as any).totalEgp || '0');
+          const allocated = parseFloat(row.allocated || '0');
+          const outstanding = total - allocated;
+          if (outstanding < 0.01) continue;
+
+          const toAllocate = Math.min(remaining, outstanding);
+          await tx.insert(localInvoiceAllocations).values({
+            invoiceId: (row.invoice as any).id,
+            paymentId: payment.id,
+            amountEgp: toAllocate.toFixed(2),
+            sourceType: 'payment',
+          });
+          remaining -= toAllocate;
+        }
       }
 
       return payment;
@@ -4316,20 +4368,38 @@ export class DatabaseStorage implements IStorage {
             entryType = 'debit';
           }
           ledgerNote = `هامش مقبول - ${quantity} قطعة`;
+          // Create invoice allocation so paidAmount reflects the returned amount
+          if (existingCase.sourceInvoiceId && amountEgp > 0) {
+            await tx.insert(localInvoiceAllocations).values({
+              invoiceId: existingCase.sourceInvoiceId,
+              returnCaseId: id,
+              amountEgp: amountEgp.toFixed(2),
+              sourceType: 'return_deduction',
+            });
+          }
           break;
-          
+
         case 'exchange':
           ledgerAmount = 0;
           entryType = 'adjustment';
           ledgerNote = `استبدال - ${quantity} قطعة`;
           break;
-          
+
         case 'deduct_value':
           ledgerAmount = -amountEgp;
           entryType = 'credit';
           ledgerNote = `خصم قيمة - ${amountEgp.toFixed(2)} ج.م`;
+          // Create invoice allocation so paidAmount reflects the deducted value
+          if (existingCase.sourceInvoiceId && amountEgp > 0) {
+            await tx.insert(localInvoiceAllocations).values({
+              invoiceId: existingCase.sourceInvoiceId,
+              returnCaseId: id,
+              amountEgp: amountEgp.toFixed(2),
+              sourceType: 'return_deduction',
+            });
+          }
           break;
-          
+
         case 'damaged':
           ledgerAmount = 0;
           entryType = 'adjustment';

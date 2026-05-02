@@ -48,6 +48,18 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **May 2026**: FIFO Auto-Settlement + Return Case Resolution + Allocations
+  - Added `local_invoice_allocations` table (paymentId/returnCaseId → invoiceId → amountEgp)
+  - `createLocalPayment` now auto-allocates payment to oldest outstanding invoices first (FIFO)
+  - `getAllLocalInvoicesWithPayments` now reads paidAmount from `local_invoice_allocations` (not localPayments.invoiceId)
+  - `resolveReturnCase` with `deduct_value` or `accepted_return` creates allocation on sourceInvoiceId, reducing invoice balance
+  - `getLocalPayments` now returns payments with their `allocations[]` array for display
+  - PaymentsTab updated: shows all invoices settled per payment (FIFO breakdown badges with amounts)
+  - ReturnsTab fixed: correct DB field names (sourceInvoiceId, notes, resolution, amountEgp, pieces)
+  - ReturnsTab enhanced: added "تسوية" button per row, opens ResolveReturnCaseDialog
+  - ResolveReturnCaseDialog added: choose resolution type (deduct_value/accepted_return/exchange/damaged/rejected), set amount/pieces, shows note that deduction affects invoice balance
+  - `getReturnStatusBadge` now handles `under_inspection` status correctly
+  - `useResolveReturnCase` now invalidates invoices, payments, and parties caches after resolution
 - **May 2026**: Fixed payment creation error + added payment status on invoice creation
   - Fixed `entryType: 'credit'` → `'payment'` in `createLocalPayment` ledger entry (semantic fix)
   - Added `getAllLocalInvoicesWithPayments` to `IStorage` interface (TypeScript fix)
