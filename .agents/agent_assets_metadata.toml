@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "MaxEmUHEiYbAjvPmHnGfT"
+uri = "file://PRD_ملفات_التجارة_المحلية.txt"
+type = "text"
+title = "PRD — وحدة ملفات التجارة المحلية"
