@@ -154,6 +154,18 @@ export function useCreateLocalInvoice() {
   });
 }
 
+export function useUpdateInvoiceStatus() {
+  return useMutation({
+    mutationFn: async ({ id, status }: { id: number; status: string }) => {
+      return apiRequest("PATCH", `/api/local-trade/invoices/${id}`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
+    },
+  });
+}
+
 export function useReceiveInvoice() {
   return useMutation({
     mutationFn: async ({ id, data }: { id: number; data: Record<string, unknown> }) => {

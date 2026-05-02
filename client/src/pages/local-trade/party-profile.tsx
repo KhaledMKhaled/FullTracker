@@ -27,6 +27,8 @@ import {
   AlertTriangle,
   Camera,
   Printer,
+  XCircle,
+  CheckCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -89,6 +91,7 @@ import {
   useMarkNotificationRead,
   useLocalInvoice,
   useReceiveInvoice,
+  useUpdateInvoiceStatus,
 } from "@/hooks/use-local-trade";
 import { useAuth } from "@/hooks/useAuth";
 import { getErrorMessage, queryClient } from "@/lib/queryClient";
@@ -1563,6 +1566,23 @@ function InvoicesTab({
 }) {
   const [viewInvoiceId, setViewInvoiceId] = useState<number | null>(null);
   const [receiveInvoiceId, setReceiveInvoiceId] = useState<number | null>(null);
+  const updateStatus = useUpdateInvoiceStatus();
+  const { toast } = useToast();
+
+  const handleConfirmDelivery = (invoiceId: number) => {
+    updateStatus.mutate({ id: invoiceId, status: "received" }, {
+      onSuccess: () => toast({ title: "تم تأكيد التسليم" }),
+      onError: () => toast({ title: "خطأ", variant: "destructive" }),
+    });
+  };
+
+  const handleCancel = (invoiceId: number) => {
+    if (!confirm("هل أنت متأكد من إلغاء هذه الفاتورة؟")) return;
+    updateStatus.mutate({ id: invoiceId, status: "cancelled" }, {
+      onSuccess: () => toast({ title: "تم إلغاء الفاتورة" }),
+      onError: () => toast({ title: "خطأ", variant: "destructive" }),
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -1676,6 +1696,31 @@ function InvoicesTab({
                           >
                             <Package className="w-3.5 h-3.5 ml-1" />
                             استلام
+                          </Button>
+                        )}
+                        {(invoice.invoiceKind === "sale" || invoice.invoiceKind === "sale_no_stock") && (invoice.status === "posted" || invoice.status === "draft") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-green-600 hover:text-green-700 hover:bg-green-50"
+                            onClick={() => handleConfirmDelivery(invoice.id)}
+                            disabled={updateStatus.isPending}
+                            title="تأكيد التسليم للعميل"
+                          >
+                            <CheckCheck className="w-3.5 h-3.5 ml-1" />
+                            تسليم
+                          </Button>
+                        )}
+                        {(invoice.status === "posted" || invoice.status === "draft") && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-red-500 hover:text-red-600 hover:bg-red-50"
+                            onClick={() => handleCancel(invoice.id)}
+                            disabled={updateStatus.isPending}
+                            title="إلغاء الفاتورة"
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
                           </Button>
                         )}
                       </div>
