@@ -3902,15 +3902,25 @@ export class DatabaseStorage implements IStorage {
       conditions.push(eq(localInvoices.status, filters.status));
     }
 
-    // Use localInvoiceAllocations for accurate paid amounts (FIFO + return deductions)
+    // paidAmount = allocations (FIFO/return_deduction) + direct-linked payments with no allocation (backward compat)
     const invoicesQuery = db
       .select({
         invoice: localInvoices,
-        paidAmount: sql<string>`COALESCE(SUM(${localInvoiceAllocations.amountEgp}), 0)`,
+        paidAmount: sql<string>`(
+          SELECT COALESCE(SUM(lia.amount_egp), 0)
+          FROM local_invoice_allocations lia
+          WHERE lia.invoice_id = ${localInvoices.id}
+        ) + (
+          SELECT COALESCE(SUM(lp.amount_egp), 0)
+          FROM local_payments lp
+          WHERE lp.invoice_id = ${localInvoices.id}
+          AND NOT EXISTS (
+            SELECT 1 FROM local_invoice_allocations lia2
+            WHERE lia2.payment_id = lp.id AND lia2.invoice_id = ${localInvoices.id}
+          )
+        )`,
       })
       .from(localInvoices)
-      .leftJoin(localInvoiceAllocations, eq(localInvoices.id, localInvoiceAllocations.invoiceId))
-      .groupBy(localInvoices.id)
       .orderBy(desc(localInvoices.createdAt));
 
     const mapRow = (row: any) => {
@@ -3918,7 +3928,7 @@ export class DatabaseStorage implements IStorage {
       const paidAmount = parseFloat(row.paidAmount || '0');
       const remainingAmount = Math.max(0, totalAmount - paidAmount);
       let paymentStatus = 'unpaid';
-      if (paidAmount >= totalAmount && totalAmount > 0) {
+      if (paidAmount > 0 && paidAmount >= totalAmount && totalAmount > 0) {
         paymentStatus = 'paid';
       } else if (paidAmount > 0) {
         paymentStatus = 'partial';
@@ -4248,41 +4258,53 @@ export class DatabaseStorage implements IStorage {
           createdByUserId: data.createdByUserId,
         });
 
-        // FIFO auto-settlement: distribute payment across oldest outstanding invoices first
+        // If payment is explicitly linked to a specific invoice, allocate to it first
         let remaining = paymentAmount;
-
-        // Get all outstanding invoices for this party ordered oldest first
-        const outstandingRows = await tx
-          .select({
-            invoice: localInvoices,
-            allocated: sql<string>`COALESCE(SUM(${localInvoiceAllocations.amountEgp}), 0)`,
-          })
-          .from(localInvoices)
-          .leftJoin(localInvoiceAllocations, eq(localInvoices.id, localInvoiceAllocations.invoiceId))
-          .where(
-            and(
-              eq(localInvoices.partyId, data.partyId),
-              sql`${localInvoices.status} NOT IN ('cancelled', 'archived')`
-            )
-          )
-          .groupBy(localInvoices.id)
-          .orderBy(asc(localInvoices.invoiceDate), asc(localInvoices.id));
-
-        for (const row of outstandingRows) {
-          if (remaining <= 0.009) break;
-          const total = parseFloat((row.invoice as any).totalEgp || '0');
-          const allocated = parseFloat(row.allocated || '0');
-          const outstanding = total - allocated;
-          if (outstanding < 0.01) continue;
-
-          const toAllocate = Math.min(remaining, outstanding);
+        if (data.invoiceId) {
           await tx.insert(localInvoiceAllocations).values({
-            invoiceId: (row.invoice as any).id,
+            invoiceId: data.invoiceId,
             paymentId: payment.id,
-            amountEgp: toAllocate.toFixed(2),
+            amountEgp: paymentAmount.toFixed(2),
             sourceType: 'payment',
           });
-          remaining -= toAllocate;
+          remaining = 0; // full amount allocated to explicit invoice
+        }
+
+        // FIFO auto-settlement: distribute remaining across oldest outstanding invoices
+        if (remaining > 0.009) {
+          const outstandingRows = await tx
+            .select({
+              invoice: localInvoices,
+              allocated: sql<string>`COALESCE(SUM(${localInvoiceAllocations.amountEgp}), 0)`,
+            })
+            .from(localInvoices)
+            .leftJoin(localInvoiceAllocations, eq(localInvoices.id, localInvoiceAllocations.invoiceId))
+            .where(
+              and(
+                eq(localInvoices.partyId, data.partyId),
+                sql`${localInvoices.status} NOT IN ('cancelled', 'archived')`,
+                data.invoiceId ? sql`${localInvoices.id} != ${data.invoiceId}` : sql`1=1`
+              )
+            )
+            .groupBy(localInvoices.id)
+            .orderBy(asc(localInvoices.invoiceDate), asc(localInvoices.id));
+
+          for (const row of outstandingRows) {
+            if (remaining <= 0.009) break;
+            const total = parseFloat((row.invoice as any).totalEgp || '0');
+            const allocated = parseFloat(row.allocated || '0');
+            const outstanding = total - allocated;
+            if (outstanding < 0.01) continue;
+
+            const toAllocate = Math.min(remaining, outstanding);
+            await tx.insert(localInvoiceAllocations).values({
+              invoiceId: (row.invoice as any).id,
+              paymentId: payment.id,
+              amountEgp: toAllocate.toFixed(2),
+              sourceType: 'payment',
+            });
+            remaining -= toAllocate;
+          }
         }
       }
 

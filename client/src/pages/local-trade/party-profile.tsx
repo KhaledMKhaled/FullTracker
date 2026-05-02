@@ -3052,10 +3052,14 @@ function PaymentDialog({
   // Fetch invoices for this party with payment info
   const { data: invoices } = useLocalInvoices({ partyId });
   
-  // Filter to show only invoices with remaining balance
-  const unpaidInvoices = (invoices || []).filter((inv: any) => 
-    parseFloat(inv.remainingAmount || inv.totalEgp) > 0 && inv.status !== 'draft'
-  );
+  // Show all active invoices (exclude cancelled/archived) — draft invoices can also receive payments
+  const unpaidInvoices = (invoices || []).filter((inv: any) => {
+    const status = inv.status;
+    if (status === 'cancelled' || status === 'archived') return false;
+    // Show invoices that have remaining balance OR have totalEgp > 0
+    // Also show all invoices so user can always link a payment to any invoice
+    return true;
+  });
 
   const handleInvoiceChange = (invoiceId: string) => {
     setSelectedInvoiceId(invoiceId);
