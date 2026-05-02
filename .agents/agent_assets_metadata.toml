@@ -12,3 +12,9 @@ id = "tgCFT1VgzXVkS8zTcCrMA"
 uri = "file://PRD_ملفات_التجارة_المحلية.docx"
 type = "word_document"
 title = "PRD — وحدة ملفات التجارة المحلية (v1.1)"
+
+[[outputs]]
+id = "Tp4ws2z4mAlADu5roYdd1"
+uri = "file://PDR-2026-05-02.md"
+type = "text"
+title = "تقرير التطوير اليومي — 2 مايو 2026"
