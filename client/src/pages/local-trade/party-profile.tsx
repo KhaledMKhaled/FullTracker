@@ -172,6 +172,7 @@ interface LedgerEntry {
   id: number;
   entryDate: string;
   description: string;
+  entryType?: string | null;
   debitEgp: string;
   creditEgp: string;
   balanceEgp: string;
@@ -2499,16 +2500,27 @@ function LedgerTab({
     });
   }, [entries, dateFrom, dateTo]);
 
-  const getReferenceTypeArabic = (type: string | null | undefined) => {
-    if (!type) return "-";
-    const types: Record<string, string> = {
-      invoice: "فاتورة",
-      payment: "دفعة",
-      return: "مرتجع",
-      adjustment: "تسوية",
-      opening_balance: "رصيد افتتاحي",
-    };
-    return types[type] || type;
+  const getEntryTypeBadge = (type: string | null | undefined) => {
+    switch (type) {
+      case "purchase":
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-xs whitespace-nowrap">📦 شراء</Badge>;
+      case "sale":
+        return <Badge variant="secondary" className="bg-green-100 text-green-800 text-xs whitespace-nowrap">🛒 بيع</Badge>;
+      case "payment":
+        return <Badge variant="secondary" className="bg-purple-100 text-purple-800 text-xs whitespace-nowrap">💰 دفعة</Badge>;
+      case "return":
+        return <Badge variant="secondary" className="bg-amber-100 text-amber-800 text-xs whitespace-nowrap">↩️ هامش</Badge>;
+      case "opening_balance":
+        return <Badge variant="secondary" className="bg-gray-100 text-gray-700 text-xs whitespace-nowrap">📊 رصيد افتتاحي</Badge>;
+      case "adjustment":
+      case "credit":
+      case "debit":
+        return <Badge variant="secondary" className="bg-orange-100 text-orange-800 text-xs whitespace-nowrap">⚙️ تسوية</Badge>;
+      case "settlement":
+        return <Badge variant="secondary" className="bg-indigo-100 text-indigo-800 text-xs whitespace-nowrap">✅ تسوية نهائية</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs">{type || "-"}</Badge>;
+    }
   };
 
   const handleExportPDF = async () => {
@@ -2552,20 +2564,26 @@ function LedgerTab({
     }
     doc.text(`تاريخ التصدير: ${new Date().toLocaleDateString("ar-EG")}`, doc.internal.pageSize.getWidth() - 15, yPos, { align: "right" });
     
+    const typeLabels: Record<string, string> = {
+      purchase: "شراء", sale: "بيع", payment: "دفعة", return: "هامش",
+      opening_balance: "رصيد افتتاحي", adjustment: "تسوية", settlement: "تسوية نهائية",
+    };
     const tableData = filteredEntries.map(entry => {
       const balance = parseFloat(entry.balanceEgp || "0");
       const balanceText = `${formatCurrency(Math.abs(balance))} ${balance > 0 ? "(مدين)" : balance < 0 ? "(دائن)" : ""}`;
+      const eType = entry.entryType || entry.referenceType || "";
       return [
         balanceText,
         parseFloat(entry.creditEgp || "0") > 0 ? formatCurrency(entry.creditEgp) : "-",
         parseFloat(entry.debitEgp || "0") > 0 ? formatCurrency(entry.debitEgp) : "-",
         entry.description || "-",
+        typeLabels[eType] || eType || "-",
         new Date(entry.entryDate).toLocaleDateString("ar-EG"),
       ];
     });
     
     (doc as any).autoTable({
-      head: [["الرصيد", "دائن", "مدين", "البيان", "التاريخ"]],
+      head: [["الرصيد", "دائن (علينا)", "مدين (لنا)", "البيان", "النوع", "التاريخ"]],
       body: tableData,
       startY: yPos + 10,
       theme: "grid",
@@ -2605,12 +2623,18 @@ function LedgerTab({
       return;
     }
 
-    const headers = ["التاريخ", "البيان", "مدين", "دائن", "الرصيد"];
+    const csvTypeLabels: Record<string, string> = {
+      purchase: "شراء", sale: "بيع", payment: "دفعة", return: "هامش",
+      opening_balance: "رصيد افتتاحي", adjustment: "تسوية", settlement: "تسوية نهائية",
+    };
+    const headers = ["التاريخ", "النوع", "البيان", "مدين (لنا)", "دائن (علينا)", "الرصيد"];
     const rows = filteredEntries.map(entry => {
       const balance = parseFloat(entry.balanceEgp || "0");
       const balanceText = `${Math.abs(balance)} ${balance > 0 ? "(مدين)" : balance < 0 ? "(دائن)" : ""}`;
+      const eType = entry.entryType || entry.referenceType || "";
       return [
         new Date(entry.entryDate).toLocaleDateString("ar-EG"),
+        csvTypeLabels[eType] || eType || "-",
         (entry.description || "").replace(/,/g, "،"),
         parseFloat(entry.debitEgp || "0") > 0 ? entry.debitEgp : "",
         parseFloat(entry.creditEgp || "0") > 0 ? entry.creditEgp : "",
@@ -2667,36 +2691,55 @@ function LedgerTab({
       <div className="border rounded-lg overflow-hidden">
         <Table>
           <TableHeader>
-            <TableRow>
-              <TableHead className="text-right">التاريخ</TableHead>
+            <TableRow className="bg-muted/50">
+              <TableHead className="text-right w-24">التاريخ</TableHead>
+              <TableHead className="text-right w-28">النوع</TableHead>
               <TableHead className="text-right">البيان</TableHead>
-              <TableHead className="text-right">مدين</TableHead>
-              <TableHead className="text-right">دائن</TableHead>
-              <TableHead className="text-right">الرصيد</TableHead>
+              <TableHead className="text-right w-32 text-green-700">مدين (لنا)</TableHead>
+              <TableHead className="text-right w-32 text-red-700">دائن (علينا)</TableHead>
+              <TableHead className="text-right w-36">الرصيد</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filteredEntries.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                  لا توجد حركات
+                <TableCell colSpan={6} className="text-center py-12 text-muted-foreground">
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-3xl">📋</span>
+                    <span>لا توجد حركات في هذه الفترة</span>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
               filteredEntries.map((entry) => {
                 const balance = parseFloat(entry.balanceEgp || "0");
+                const debit  = parseFloat(entry.debitEgp  || "0");
+                const credit = parseFloat(entry.creditEgp || "0");
+                const entryType = entry.entryType || entry.referenceType;
                 return (
-                  <TableRow key={entry.id}>
-                    <TableCell>{formatDate(entry.entryDate)}</TableCell>
-                    <TableCell>{entry.description}</TableCell>
-                    <TableCell className="font-mono text-red-600">
-                      {parseFloat(entry.debitEgp || "0") > 0 ? formatCurrency(entry.debitEgp) : "-"}
+                  <TableRow
+                    key={entry.id}
+                    className={
+                      entryType === "purchase" ? "bg-blue-50/40 hover:bg-blue-50/70" :
+                      entryType === "sale"     ? "bg-green-50/40 hover:bg-green-50/70" :
+                      entryType === "payment"  ? "bg-purple-50/30 hover:bg-purple-50/60" :
+                      entryType === "return"   ? "bg-amber-50/40 hover:bg-amber-50/70" :
+                      ""
+                    }
+                  >
+                    <TableCell className="text-sm text-muted-foreground">{formatDate(entry.entryDate)}</TableCell>
+                    <TableCell>{getEntryTypeBadge(entryType)}</TableCell>
+                    <TableCell className="text-sm">{entry.description}</TableCell>
+                    <TableCell className="font-mono font-medium text-green-700">
+                      {debit > 0 ? formatCurrency(debit) : <span className="text-muted-foreground">-</span>}
                     </TableCell>
-                    <TableCell className="font-mono text-green-600">
-                      {parseFloat(entry.creditEgp || "0") > 0 ? formatCurrency(entry.creditEgp) : "-"}
+                    <TableCell className="font-mono font-medium text-red-600">
+                      {credit > 0 ? formatCurrency(credit) : <span className="text-muted-foreground">-</span>}
                     </TableCell>
-                    <TableCell className={`font-mono ${balance > 0 ? "text-red-600" : balance < 0 ? "text-green-600" : ""}`}>
-                      {formatCurrency(Math.abs(balance))} {balance > 0 ? "(مدين)" : balance < 0 ? "(دائن)" : ""}
+                    <TableCell className={`font-mono font-bold ${balance > 0 ? "text-green-700" : balance < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                      {formatCurrency(Math.abs(balance))}
+                      {balance > 0 && <span className="text-xs mr-1 font-normal">(مدين)</span>}
+                      {balance < 0 && <span className="text-xs mr-1 font-normal">(دائن)</span>}
                     </TableCell>
                   </TableRow>
                 );
@@ -2705,6 +2748,24 @@ function LedgerTab({
           </TableBody>
         </Table>
       </div>
+
+      {filteredEntries.length > 0 && (
+        <div className="flex justify-end pt-2">
+          <div className={`rounded-lg px-5 py-3 flex items-center gap-3 ${
+            currentBalance > 0 ? "bg-green-50 border border-green-200" :
+            currentBalance < 0 ? "bg-red-50 border border-red-200" :
+            "bg-muted border"
+          }`}>
+            <span className="text-sm text-muted-foreground">الرصيد الإجمالي:</span>
+            <span className={`text-xl font-bold font-mono ${currentBalance > 0 ? "text-green-700" : currentBalance < 0 ? "text-red-600" : ""}`}>
+              {formatCurrency(Math.abs(currentBalance))} ج.م
+            </span>
+            <Badge variant="outline" className={`${currentBalance > 0 ? "border-green-500 text-green-700" : currentBalance < 0 ? "border-red-500 text-red-600" : ""}`}>
+              {currentBalance > 0 ? "مدين" : currentBalance < 0 ? "دائن" : "متوازن"}
+            </Badge>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

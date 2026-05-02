@@ -895,7 +895,7 @@ export interface IStorage {
 
   // Parties
   getAllParties(filters?: { type?: string; isActive?: boolean }): Promise<(Party & { currentBalance: string })[]>;
-  getPartyLedgerEntries(partyId: number, seasonId?: number): Promise<Array<{ id: number; entryDate: string; description: string; debitEgp: string; creditEgp: string; balanceEgp: string; referenceType: string | null; referenceId: number | null }>>;
+  getPartyLedgerEntries(partyId: number, seasonId?: number): Promise<Array<{ id: number; entryDate: string; description: string; entryType: string; debitEgp: string; creditEgp: string; balanceEgp: string; referenceType: string | null; referenceId: number | null }>>;
   getParty(id: number): Promise<Party | undefined>;
   createParty(data: InsertParty): Promise<Party>;
   updateParty(id: number, data: Partial<InsertParty>): Promise<Party | undefined>;
@@ -3719,33 +3719,146 @@ export class DatabaseStorage implements IStorage {
     }));
   }
 
-  async getPartyLedgerEntries(partyId: number, seasonId?: number): Promise<Array<{ id: number; entryDate: string; description: string; debitEgp: string; creditEgp: string; balanceEgp: string; referenceType: string | null; referenceId: number | null }>> {
-    const conditions: any[] = [eq(partyLedgerEntries.partyId, partyId)];
+  async getPartyLedgerEntries(partyId: number, seasonId?: number): Promise<Array<{ id: number; entryDate: string; description: string; entryType: string; debitEgp: string; creditEgp: string; balanceEgp: string; referenceType: string | null; referenceId: number | null }>> {
+    // Sign convention: positive = they owe us (مدين عليهم), negative = we owe them (دائن علينا)
+    // - Sale invoice:     +totalEgp  (they bought from us → they owe us)
+    // - Purchase invoice: -totalEgp  (we bought from them → we owe them)
+    // - Collection/payment: direction determined by linked invoice kind or party type
+
+    // Get party type for default payment direction fallback
+    const [partyRow] = await db.select({ type: parties.type }).from(parties).where(eq(parties.id, partyId));
+    const partyType = partyRow?.type || 'customer';
+
+    // Build season filters
+    const invConditions: any[] = [eq(localInvoices.partyId, partyId)];
+    const payConditions: any[] = [eq(localPayments.partyId, partyId)];
+    const manualConditions: any[] = [eq(partyLedgerEntries.partyId, partyId)];
     if (seasonId !== undefined) {
-      conditions.push(eq(partyLedgerEntries.seasonId, seasonId));
+      invConditions.push(eq(localInvoices.seasonId, seasonId));
+      payConditions.push(eq(localPayments.seasonId, seasonId));
+      manualConditions.push(eq(partyLedgerEntries.seasonId, seasonId));
     }
 
-    const entries = await db
-      .select()
-      .from(partyLedgerEntries)
-      .where(and(...conditions))
-      .orderBy(asc(partyLedgerEntries.createdAt));
+    // Fetch all three sources in parallel
+    const [invoiceRows, paymentRows, allManualRows] = await Promise.all([
+      db.select().from(localInvoices).where(and(...invConditions)).orderBy(asc(localInvoices.invoiceDate), asc(localInvoices.id)),
+      db.select().from(localPayments).where(and(...payConditions)).orderBy(asc(localPayments.paymentDate), asc(localPayments.id)),
+      db.select().from(partyLedgerEntries).where(and(...manualConditions)).orderBy(asc(partyLedgerEntries.createdAt)),
+    ]);
 
+    // Filter manual rows to only non-invoice/non-payment sources (opening balance, adjustment, return_case, settlement)
+    const manualRows = allManualRows.filter(r =>
+      !r.sourceType || !['local_invoice', 'local_payment'].includes(r.sourceType)
+    );
+
+    // Batch-fetch payment allocations for direction detection (purchase vs sale)
+    const paymentIds = paymentRows.map(p => p.id);
+    const paymentKindMap = new Map<number, string>(); // paymentId → first allocated invoiceKind
+    if (paymentIds.length > 0) {
+      const allocRows = await db
+        .select({ paymentId: localInvoiceAllocations.paymentId, invoiceKind: localInvoices.invoiceKind })
+        .from(localInvoiceAllocations)
+        .innerJoin(localInvoices, eq(localInvoiceAllocations.invoiceId, localInvoices.id))
+        .where(inArray(localInvoiceAllocations.paymentId, paymentIds));
+      for (const alloc of allocRows) {
+        if (alloc.paymentId && !paymentKindMap.has(alloc.paymentId)) {
+          paymentKindMap.set(alloc.paymentId, alloc.invoiceKind || 'sale');
+        }
+      }
+    }
+
+    // Build raw entries list
+    interface RawEntry {
+      sortDate: string;
+      sortId: number;
+      entryDate: string;
+      description: string;
+      entryType: string;
+      amountEgp: number;
+      referenceId: number | null;
+    }
+    const raw: RawEntry[] = [];
+
+    // ── Invoices ────────────────────────────────────────────────
+    for (const inv of invoiceRows) {
+      const total = parseAmount(inv.totalEgp);
+      const isPurchase = inv.invoiceKind === 'purchase';
+      raw.push({
+        sortDate: inv.invoiceDate || new Date().toISOString().split('T')[0],
+        sortId: inv.id,
+        entryDate: inv.invoiceDate || new Date().toISOString().split('T')[0],
+        description: isPurchase
+          ? `فاتورة شراء ${inv.referenceNumber || ''}`
+          : `فاتورة بيع ${inv.referenceNumber || ''}`,
+        entryType: isPurchase ? 'purchase' : 'sale',
+        amountEgp: isPurchase ? -total : +total,
+        referenceId: inv.id,
+      });
+    }
+
+    // ── Payments ────────────────────────────────────────────────
+    for (const pay of paymentRows) {
+      const payAmt = parseAmount(pay.amountEgp);
+      const linkedKind = paymentKindMap.get(pay.id);
+      let amount: number;
+      if (linkedKind === 'purchase') {
+        amount = +payAmt;  // we paid supplier → reduces our payable (good for us)
+      } else if (linkedKind === 'sale') {
+        amount = -payAmt;  // they paid us → reduces their receivable
+      } else if (partyType === 'merchant') {
+        amount = +payAmt;  // merchant → default: we pay them
+      } else {
+        amount = -payAmt;  // customer / both → default: collection
+      }
+      const methodLabel = pay.paymentMethod || 'نقدي';
+      raw.push({
+        sortDate: pay.paymentDate,
+        sortId: pay.id,
+        entryDate: pay.paymentDate,
+        description: `دفعة (${methodLabel}) - ${payAmt.toLocaleString('ar-EG', { minimumFractionDigits: 2 })} ج.م`,
+        entryType: 'payment',
+        amountEgp: amount,
+        referenceId: pay.id,
+      });
+    }
+
+    // ── Manual / return_case entries ────────────────────────────
+    for (const man of manualRows) {
+      const amt = parseAmount(man.amountEgp);
+      const manDate = man.createdAt ? man.createdAt.toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+      raw.push({
+        sortDate: manDate,
+        sortId: man.id + 10_000_000, // after same-day invoices/payments
+        entryDate: manDate,
+        description: man.note || '-',
+        entryType: man.sourceType === 'return_case' ? 'return' : (man.entryType || 'adjustment'),
+        amountEgp: amt,
+        referenceId: man.sourceId || null,
+      });
+    }
+
+    // Sort chronologically, stable by sortId
+    raw.sort((a, b) => {
+      const d = a.sortDate.localeCompare(b.sortDate);
+      return d !== 0 ? d : a.sortId - b.sortId;
+    });
+
+    // Compute running balance and emit final rows
     let runningBalance = 0;
-    return entries.map((entry) => {
-      const amount = parseFloat(entry.amountEgp || "0");
-      runningBalance += amount;
-      const debit = amount > 0 ? amount : 0;
-      const credit = amount < 0 ? Math.abs(amount) : 0;
+    return raw.map((entry, idx) => {
+      runningBalance += entry.amountEgp;
+      const debit  = entry.amountEgp > 0 ? entry.amountEgp : 0;
+      const credit = entry.amountEgp < 0 ? Math.abs(entry.amountEgp) : 0;
       return {
-        id: entry.id,
-        entryDate: entry.createdAt ? entry.createdAt.toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
-        description: entry.note || "-",
-        debitEgp: debit.toFixed(2),
+        id: idx + 1,
+        entryDate: entry.entryDate,
+        description: entry.description,
+        entryType: entry.entryType,
+        debitEgp:  debit.toFixed(2),
         creditEgp: credit.toFixed(2),
         balanceEgp: runningBalance.toFixed(2),
-        referenceType: entry.entryType || null,
-        referenceId: entry.sourceId || null,
+        referenceType: entry.entryType,
+        referenceId: entry.referenceId,
       };
     });
   }

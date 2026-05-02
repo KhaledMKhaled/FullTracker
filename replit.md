@@ -1,7 +1,7 @@
 # Tracker - نظام إدارة الشحنات والتكاليف والمدفوعات
 
 ## Overview
-Tracker is a comprehensive multi-user Arabic (RTL) web application designed for managing shipment costing, inventory, and payment settlements. It streamlines the shipment process through a 5-step workflow (Import, Shipping, Customs & Takhreej, Missing Pieces, Summary), offering dual-currency support (RMB/EGP), multiple payment methods with overpayment tracking, supplier management, exchange rate management, and role-based access control. The platform aims to provide efficient and accurate financial tracking for international shipments.
+Tracker is a comprehensive multi-user Arabic (RTL) web application designed for managing shipment costing, inventory, and payment settlements. It streamlines the shipment process through a 5-step workflow (Import, Shipping, Customs & Takhreej, Missing Pieces, Summary), offering dual-currency support (RMB/EGP), multiple payment methods with overpayment tracking, supplier management, exchange rate management, and role-based access control. The platform aims to provide efficient and accurate financial tracking for international shipments, including a robust Local Trade Module for managing local merchants and customers.
 
 ## User Preferences
 - All UI is in Arabic with RTL layout
@@ -24,137 +24,37 @@ The application is built as a full-stack web application with a clear separation
 - **Dual-Currency System**: Supports RMB (purchase), EGP (final accounting), and USD (reference) with historical exchange rate management.
 - **Role-Based Access Control**: Defines user roles (Admin, Accountant, Inventory Manager, Viewer) with specific permissions.
 - **Inventory Management**: Tracks product movements and calculates per-piece costs, including purchase, shipping, customs, and clearance shares.
-- **Payment Management**: Supports various payment methods, tracks overpayments, and allows for supplier attribution.
-- **Reporting & Accounting**: Includes an accounting dashboard, supplier balances, movement reports, and payment method reports with CSV/Excel export capabilities.
+- **Payment Management**: Supports various payment methods, tracks overpayments, and allows for supplier attribution, including FIFO auto-settlement for local trade payments.
+- **Reporting & Accounting**: Includes an accounting dashboard, supplier balances, movement reports, and payment method reports with CSV/Excel export capabilities, and redesigned comprehensive account statements.
 - **Data Persistence**: Utilizes Replit Object Storage for persistent storage of item images and payment attachments.
-- **Backup and Restore**: Admin-only feature for comprehensive system backup (database, media files) and restore functionality with progress tracking.
-- **Local Trade Module (التجارة المحلية)**: Comprehensive EGP-only module for managing local merchants (تاجر) and customers (عميل):
-  - Party management with contact info, payment terms (كاش/آجل), credit limits
-  - Purchase invoices with two-step workflow (create → receive)
-  - Ledger-based balance tracking with running totals
-  - Return cases and margin management
-  - Seasonal settlement and archiving
+- **Backup and Restore**: Admin-only feature for comprehensive system backup (database, media files) and restore functionality.
+- **Local Trade Module (التجارة المحلية)**: Comprehensive EGP-only module for managing local merchants (تاجر) and customers (عميل). Features include:
+  - Party management with contact info, payment terms, credit limits, and "both" (مزدوج) party type.
+  - Purchase and Sale invoices with a two-step workflow (create → receive) supporting per-line receiving, automatic margin/return case creation, and linked payment tracking (paid, partially paid, unpaid statuses).
+  - Ledger-based balance tracking with running totals and opening balance management.
+  - Return cases resolution with various types (deduct_value, accepted_return, etc.) and impact on invoice balances.
+  - Party-centric workflow where all actions (invoices, payments, margins, collections) are managed from within a party's profile.
+  - Customer 360 page enhancements with KPIs, collection tracking with reminders, and timeline views.
 
 ### UI/UX Decisions
 - Consistent Arabic RTL layout using Cairo and Tajawal fonts.
-- Sticky shipment details and item list pagination in the wizard for improved usability.
-- Real-time cost calculation display at every step of the shipment process.
+- Sticky shipment details and item list pagination in the wizard.
+- Real-time cost calculation display at every step.
 - Intuitive UI for tracking missing pieces and automatic cost recalculation.
+- Redesigned invoice type selector using visual card buttons.
+- Enhanced invoice receiving and viewing with product images, summary cards, and clear inventory impact messages.
+- Comprehensive invoice creation wizard with image upload, product type selection, and unit toggles.
 
 ### Key Design Decisions
-- Chunked bulk inserts for handling large shipments efficiently.
-- Stable `lineNo` for shipment items ensuring consistent ordering.
-- Transactional deletion for payments, ensuring data integrity.
-- Apply to All feature in Customs step for quick data entry.
-
-## Recent Changes
-- **May 2026**: FIFO Auto-Settlement + Return Case Resolution + Allocations
-  - Added `local_invoice_allocations` table (paymentId/returnCaseId → invoiceId → amountEgp)
-  - `createLocalPayment` now auto-allocates payment to oldest outstanding invoices first (FIFO)
-  - `getAllLocalInvoicesWithPayments` now reads paidAmount from `local_invoice_allocations` (not localPayments.invoiceId)
-  - `resolveReturnCase` with `deduct_value` or `accepted_return` creates allocation on sourceInvoiceId, reducing invoice balance
-  - `getLocalPayments` now returns payments with their `allocations[]` array for display
-  - PaymentsTab updated: shows all invoices settled per payment (FIFO breakdown badges with amounts)
-  - ReturnsTab fixed: correct DB field names (sourceInvoiceId, notes, resolution, amountEgp, pieces)
-  - ReturnsTab enhanced: added "تسوية" button per row, opens ResolveReturnCaseDialog
-  - ResolveReturnCaseDialog added: choose resolution type (deduct_value/accepted_return/exchange/damaged/rejected), set amount/pieces, shows note that deduction affects invoice balance
-  - `getReturnStatusBadge` now handles `under_inspection` status correctly
-  - `useResolveReturnCase` now invalidates invoices, payments, and parties caches after resolution
-- **May 2026**: Fixed payment creation error + added payment status on invoice creation
-  - Fixed `entryType: 'credit'` → `'payment'` in `createLocalPayment` ledger entry (semantic fix)
-  - Added `getAllLocalInvoicesWithPayments` to `IStorage` interface (TypeScript fix)
-  - Fixed PaymentDialog payment method values to use Arabic (نقدي, فودافون كاش, إنستاباي, تحويل بنكي, شيك, أخرى)
-  - `useCreateLocalPayment` now also invalidates `/api/local-trade/invoices` queries so paidAmount/remainingAmount/paymentStatus refresh after recording a payment
-  - Invoice creation page (`/local-trade/invoices/new`) now has "حالة السداد" section: غير مدفوع / مدفوع جزئياً / مدفوع بالكامل
-  - If partial/full payment selected at invoice creation, a payment record is automatically created and linked to the invoice
-  - Backend invoice creation route now accepts `initialPayment` object and records payment atomically
-  - Payment status (مسدد/جزئي/غير مسدد) + paidAmount + remainingAmount already visible in InvoicesTab and PaymentDialog invoice list
-- **May 2026**: Fixed Opening Balance (رصيد افتتاحي) bugs in Local Trade Module
-  - `currentBalance` in party profile now reads from ledger (via `profile.balance`) instead of non-existent `partyData.currentBalance` field (was always 0)
-  - Added `/api/local-trade/parties/:id/ledger` endpoint returning formatted ledger entries with running balance
-  - Added `usePartyLedger` hook; كشف الحساب tab now shows actual entries instead of empty
-  - `getAllParties` now computes real `currentBalance` from ledger entries (JOIN with party_ledger_entries); parties list shows correct current balance with direction (عليه/له)
-  - Fixed `amountEgp` sent as number instead of string in two payment locations (collection payment + payment dialog)
-  - Fixed `partyTypeSnapshot` required validation error when creating return cases (schema now marks it optional; server sets it after fetching party)
-  - Fixed `CreatePartyReturnDialog` sending wrong field names (`invoiceId`→`sourceInvoiceId`, `description`→`notes`)
-- **January 2026**: Fixed Invoice Form Navigation
-  - Clicking "فاتورة جديدة" from party profile now navigates to the new invoice creation page
-  - Pre-selects the party and automatically sets invoice type based on party type
-  - Previously was opening old deprecated dialog instead of new enhanced form
-- **January 2026**: Invoice-Payment Linking System
-  - Payments can now be linked to specific invoices
-  - Track paid amount, remaining balance, and payment status (مسدد/جزئي/غير مسدد) per invoice
-  - Payment dialog shows list of unpaid invoices with balances
-  - Auto-fill payment amount when selecting an invoice
-  - Invoices tab shows: الإجمالي, المدفوع, المتبقي, حالة السداد columns
-  - Payments tab shows linked invoice reference number
-- **January 2026**: Party-Centric Workflow
-  - Removed الفواتير, المدفوعات, الهوامش from main sidebar navigation
-  - All actions now performed from within party profile pages
-  - Users must navigate to a party's profile to create invoices, record payments, or manage margins
-- **January 2026**: Added Third Party Type "مزدوج"
-  - New party type "both" (مزدوج) allows executing purchase and sale transactions with same party
-  - Available alongside existing "تاجر" (merchant) and "عميل" (customer) types
-  - "مزدوج" type parties appear in both purchase and sale invoice creation dropdowns
-  - Updated party creation/edit dialogs and profile pages
-- **January 2026**: Per-Line Invoice Receiving with Automatic Margin Cases
-  - Per-line quantity input: Enter actual received quantity for each line item
-  - Automatic shortage detection: System calculates difference between ordered and received
-  - Visual indicators: Checkmark (تمام) for full receipt, warning (ناقص) for shortages
-  - Automatic margin case creation: Creates "حالة هامش" for each line with shortage
-  - Inventory impact: Only received quantities affect inventory, not ordered
-  - Renamed "المرتجعات" to "الهوامش" throughout the system (sidebar, tabs, dialogs)
-  - receivedPieces field added to track actual received quantities per line
-- **January 2026**: Enhanced Invoice Receiving & Viewing
-  - Redesigned receive dialog to match invoice creation format
-  - Product images with hover preview for all line items
-  - Summary cards showing: lines count, total cartons, total pieces, total amount
-  - Each line displays: image, name, cartons, pieces/carton, unit mode, unit price, line total
-  - Clear inventory impact message (add for purchase, subtract for sale)
-  - Unified visual design across create, view, and receive dialogs
-- **January 2026**: Comprehensive Invoice Creation Wizard
-  - New dedicated page for creating local trade invoices (/local-trade/invoices/new)
-  - Sticky header with: merchant dropdown, auto-filled date, reference name, auto-generated reference number
-  - Quick summary cards showing: lines count, total cartons, total pieces (real-time updates)
-  - Line items with: image upload (Object Storage), product type dropdown, product name, cartons, pieces/carton
-  - Selling unit toggle (piece/dozen) with automatic calculations
-  - Auto-generated reference number format: 10001+counter-DDMMYYYY
-  - Image preview on hover with HoverCard component
-  - Backend presigned URL upload for images
-- **January 2026**: Customer 360 Page Enhancement
-  - Sticky header with customer avatar, badges, and quick action buttons
-  - 6 KPI cards showing: total invoices, total paid, balance, under inspection, last invoice date, last collection date
-  - 7 tabs: نظرة عامة (Overview), الفواتير (Invoices), المدفوعات (Payments), التحصيل (Collections), الهوامش (Margins), كشف الحساب (Statement), الأرشيف (Archive)
-  - Collections linked to payments: clicking "تم التحصيل" opens payment dialog with pre-filled data
-  - Statement export: PDF and CSV download with Arabic RTL formatting
-  - Notifications system for due/overdue collections with in-app alerts
-  - New notifications table and API endpoints
-  - Optimized batch queries for collection reminders
-- **January 2026**: Enhanced Party Profile as Comprehensive Hub
-  - Party profile page is now a complete, independent interface for all party data
-  - Added "التحصيل" (Collections) tab with 4 consecutive collection date slots, reminders, status tracking
-  - Added "الحركات" (Timeline) tab showing chronological activity view of invoices, payments, returns, collections
-  - New party_collections table: partyId, collectionOrder (1-4), date, amount, notes, reminderSent, status
-  - New APIs: collections CRUD, status updates, reminder marking, timeline aggregation
-  - Removed collection info from parties list - now managed exclusively in party profile
-- **January 2026**: Added Local Trade Module (التجارة المحلية)
-  - New database schema: 9 tables (parties, party_seasons, party_collections, local_invoices, local_invoice_lines, local_receipts, party_ledger_entries, local_payments, return_cases)
-  - Backend: 23+ API routes with RBAC under /api/local-trade
-  - Frontend: 5 new pages (parties, invoices, party profile, payments, returns)
-  - Features: Party management, purchase invoices with two-step workflow, ledger tracking, returns/margins, seasonal settlement
-  - Business logic: Credit limit enforcement, atomic ledger entries, zero-balance settlement validation
-- **January 2026**: Added backup file upload and restore from external storage
-  - Users can now upload a previously downloaded backup ZIP file
-  - The uploaded backup is stored in Object Storage and can be restored
-  - Confirmation dialog warns users before restoring from uploaded file
-- **January 2026**: Added three new payment methods: نواقص (Shortages), AliPay, WeChat
-  - Updated payments page, movement report, and payment methods report
-  - AliPay and WeChat use reference number field (like other non-cash methods)
-  - نواقص shows in red/destructive color in reports for visibility
-- **January 2026**: System Backup and Restore Feature with progress tracking
+- Chunked bulk inserts for large shipments.
+- Stable `lineNo` for consistent item ordering.
+- Transactional deletion for payments to ensure data integrity.
+- "Apply to All" feature in Customs step for quick data entry.
+- Atomic ledger entries for financial operations in local trade.
+- FIFO auto-allocation of payments to outstanding invoices in local trade.
 
 ## External Dependencies
 - **Replit Auth**: For user authentication and session management (OpenID Connect).
 - **Neon**: Managed PostgreSQL database service.
 - **Replit Object Storage**: For persistent storage of uploaded images and attachments (e.g., item images, payment attachments).
-- **html2canvas & jsPDF**: Used for generating PDF exports of shipment summaries.
+- **html2canvas & jsPDF**: Used for generating PDF exports of shipment summaries and account statements.
