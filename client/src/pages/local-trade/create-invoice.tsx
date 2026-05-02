@@ -340,7 +340,7 @@ export default function CreateInvoicePage() {
 
     const invoiceData = {
       invoiceKind: effectiveInvoiceKind,
-      ...(invoiceType === "sale_no_stock" ? { status: "posted" } : {}),
+      status: "posted",
       partyId,
       invoiceDate,
       referenceName: referenceName || null,

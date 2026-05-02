@@ -236,10 +236,14 @@ function formatDate(dateStr: string | null | undefined): string {
   return new Date(dateStr).toLocaleDateString("ar-EG");
 }
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, invoiceKind?: string) {
   switch (status) {
     case "draft":
-      return <Badge variant="secondary">مسودة</Badge>;
+    case "posted":
+      if (invoiceKind === "purchase") {
+        return <Badge variant="secondary" className="bg-blue-100 text-blue-800">في الطريق</Badge>;
+      }
+      return <Badge variant="secondary" className="bg-purple-100 text-purple-800">مرسلة</Badge>;
     case "pending":
       return <Badge variant="secondary">معلقة</Badge>;
     case "partially_received":
@@ -1262,7 +1266,7 @@ function ViewInvoiceDialog({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">الحالة</p>
-                {getStatusBadge(inv.status)}
+                {getStatusBadge(inv.status, inv.invoiceKind)}
               </div>
             </div>
 
@@ -1571,7 +1575,7 @@ function InvoicesTab({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">الكل</SelectItem>
-              <SelectItem value="draft">مسودة</SelectItem>
+              <SelectItem value="posted">في الطريق / مرسلة</SelectItem>
               <SelectItem value="received">مستلمة</SelectItem>
               <SelectItem value="partially_received">مستلمة جزئياً</SelectItem>
               <SelectItem value="cancelled">ملغاة</SelectItem>
@@ -1649,7 +1653,7 @@ function InvoicesTab({
                         <Badge variant="outline" className="text-xs">غير مسدد</Badge>
                       )}
                     </TableCell>
-                    <TableCell>{getStatusBadge(invoice.status)}</TableCell>
+                    <TableCell>{getStatusBadge(invoice.status, invoice.invoiceKind)}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
                         <Button
@@ -1662,7 +1666,7 @@ function InvoicesTab({
                           <Eye className="w-3.5 h-3.5 ml-1" />
                           عرض
                         </Button>
-                        {invoice.invoiceKind === "purchase" && invoice.status === "draft" && (
+                        {invoice.invoiceKind === "purchase" && (invoice.status === "posted" || invoice.status === "draft") && (
                           <Button
                             variant="ghost"
                             size="sm"
