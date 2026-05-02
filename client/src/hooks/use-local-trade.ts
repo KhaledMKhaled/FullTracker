@@ -190,6 +190,7 @@ export function useCreateLocalPayment() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
     },
   });
 }

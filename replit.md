@@ -48,6 +48,15 @@ The application is built as a full-stack web application with a clear separation
 - Apply to All feature in Customs step for quick data entry.
 
 ## Recent Changes
+- **May 2026**: Fixed payment creation error + added payment status on invoice creation
+  - Fixed `entryType: 'credit'` → `'payment'` in `createLocalPayment` ledger entry (semantic fix)
+  - Added `getAllLocalInvoicesWithPayments` to `IStorage` interface (TypeScript fix)
+  - Fixed PaymentDialog payment method values to use Arabic (نقدي, فودافون كاش, إنستاباي, تحويل بنكي, شيك, أخرى)
+  - `useCreateLocalPayment` now also invalidates `/api/local-trade/invoices` queries so paidAmount/remainingAmount/paymentStatus refresh after recording a payment
+  - Invoice creation page (`/local-trade/invoices/new`) now has "حالة السداد" section: غير مدفوع / مدفوع جزئياً / مدفوع بالكامل
+  - If partial/full payment selected at invoice creation, a payment record is automatically created and linked to the invoice
+  - Backend invoice creation route now accepts `initialPayment` object and records payment atomically
+  - Payment status (مسدد/جزئي/غير مسدد) + paidAmount + remainingAmount already visible in InvoicesTab and PaymentDialog invoice list
 - **May 2026**: Fixed Opening Balance (رصيد افتتاحي) bugs in Local Trade Module
   - `currentBalance` in party profile now reads from ledger (via `profile.balance`) instead of non-existent `partyData.currentBalance` field (was always 0)
   - Added `/api/local-trade/parties/:id/ledger` endpoint returning formatted ledger entries with running balance

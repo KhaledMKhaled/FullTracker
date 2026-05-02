@@ -7,11 +7,13 @@ import {
   Camera,
   Trash2,
   ArrowRight,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -109,6 +111,10 @@ export default function CreateInvoicePage() {
   const [referenceNumber, setReferenceNumber] = useState("");
   const [lines, setLines] = useState<InvoiceLineItem[]>([createEmptyLine()]);
   const [invoiceTypeInitialized, setInvoiceTypeInitialized] = useState(false);
+  // Payment status state
+  const [paymentStatus, setPaymentStatus] = useState<"unpaid" | "partial" | "paid">("unpaid");
+  const [initialPaymentAmount, setInitialPaymentAmount] = useState("");
+  const [initialPaymentMethod, setInitialPaymentMethod] = useState("نقدي");
 
   // Fetch all parties to support pre-selection from URL
   const { data: allParties } = useParties();
@@ -316,6 +322,22 @@ export default function CreateInvoicePage() {
   const handleSubmit = async () => {
     if (!isValid || !partyId) return;
 
+    // Build initial payment if applicable
+    let initialPayment = null;
+    if (paymentStatus === "paid") {
+      initialPayment = {
+        amountEgp: invoiceTotal.toString(),
+        paymentMethod: initialPaymentMethod,
+        paymentDate: invoiceDate,
+      };
+    } else if (paymentStatus === "partial" && parseFloat(initialPaymentAmount) > 0) {
+      initialPayment = {
+        amountEgp: initialPaymentAmount,
+        paymentMethod: initialPaymentMethod,
+        paymentDate: invoiceDate,
+      };
+    }
+
     const invoiceData = {
       invoiceKind: effectiveInvoiceKind,
       ...(invoiceType === "sale_no_stock" ? { status: "posted" } : {}),
@@ -334,11 +356,17 @@ export default function CreateInvoicePage() {
         piecesPerCarton: l.piecesPerCarton,
         imageUrl: l.imageUrl || null,
       })),
+      ...(initialPayment ? { initialPayment } : {}),
     };
 
     createMutation.mutate(invoiceData, {
-      onSuccess: () => {
-        toast({ title: "تم إنشاء الفاتورة بنجاح" });
+      onSuccess: (result: any) => {
+        const hasPayment = result?.payment;
+        toast({
+          title: hasPayment
+            ? "تم إنشاء الفاتورة وتسجيل الدفعة بنجاح"
+            : "تم إنشاء الفاتورة بنجاح",
+        });
         if (partyId) {
           navigate(`/local-trade/parties/${partyId}`);
         } else {
@@ -507,6 +535,92 @@ export default function CreateInvoicePage() {
         </div>
       </div>
 
+      {/* Payment Status Section */}
+      <div className="border rounded-lg p-4 mt-4 space-y-4 bg-muted/20">
+        <div className="flex items-center gap-2">
+          <CreditCard className="w-5 h-5 text-primary" />
+          <h3 className="font-semibold text-base">حالة السداد</h3>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => setPaymentStatus("unpaid")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-sm font-medium ${
+              paymentStatus === "unpaid"
+                ? "border-gray-400 bg-gray-50 text-gray-800"
+                : "border-gray-200 text-gray-500 hover:border-gray-300"
+            }`}
+          >
+            <span>غير مدفوع</span>
+            {paymentStatus === "unpaid" && <Badge variant="outline" className="text-xs">محدد</Badge>}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setPaymentStatus("partial"); setInitialPaymentAmount(""); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-sm font-medium ${
+              paymentStatus === "partial"
+                ? "border-yellow-400 bg-yellow-50 text-yellow-800"
+                : "border-gray-200 text-gray-500 hover:border-yellow-300"
+            }`}
+          >
+            <span>مدفوع جزئياً</span>
+            {paymentStatus === "partial" && <Badge className="text-xs bg-yellow-100 text-yellow-800 hover:bg-yellow-100">محدد</Badge>}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setPaymentStatus("paid"); setInitialPaymentAmount(invoiceTotal.toString()); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border-2 transition-all text-sm font-medium ${
+              paymentStatus === "paid"
+                ? "border-green-400 bg-green-50 text-green-800"
+                : "border-gray-200 text-gray-500 hover:border-green-300"
+            }`}
+          >
+            <span>مدفوع بالكامل</span>
+            {paymentStatus === "paid" && <Badge className="text-xs bg-green-100 text-green-800 hover:bg-green-100">محدد</Badge>}
+          </button>
+        </div>
+
+        {paymentStatus !== "unpaid" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div className="space-y-1">
+              <Label>المبلغ المدفوع (ج.م)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={invoiceTotal}
+                value={paymentStatus === "paid" ? invoiceTotal.toFixed(2) : initialPaymentAmount}
+                onChange={(e) => paymentStatus === "partial" && setInitialPaymentAmount(e.target.value)}
+                readOnly={paymentStatus === "paid"}
+                className={paymentStatus === "paid" ? "bg-muted font-mono" : "font-mono"}
+                placeholder="أدخل المبلغ المدفوع"
+              />
+              {paymentStatus === "partial" && invoiceTotal > 0 && parseFloat(initialPaymentAmount) > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  المتبقي: {(invoiceTotal - parseFloat(initialPaymentAmount || "0")).toFixed(2)} ج.م
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label>طريقة الدفع</Label>
+              <Select value={initialPaymentMethod} onValueChange={setInitialPaymentMethod}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="نقدي">نقداً</SelectItem>
+                  <SelectItem value="فودافون كاش">فودافون كاش</SelectItem>
+                  <SelectItem value="إنستاباي">إنستاباي</SelectItem>
+                  <SelectItem value="تحويل بنكي">تحويل بنكي</SelectItem>
+                  <SelectItem value="شيك">شيك</SelectItem>
+                  <SelectItem value="أخرى">أخرى</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="sticky bottom-0 bg-background border-t py-4 -mx-6 px-6 flex items-center justify-between">
         <div>
           <Button variant="outline" onClick={addLine}>
@@ -520,7 +634,7 @@ export default function CreateInvoicePage() {
           </div>
           <Button
             onClick={handleSubmit}
-            disabled={!isValid || createMutation.isPending}
+            disabled={!isValid || createMutation.isPending || (paymentStatus === "partial" && (!initialPaymentAmount || parseFloat(initialPaymentAmount) <= 0))}
           >
             {createMutation.isPending ? "جاري الحفظ..." : "حفظ الفاتورة"}
           </Button>

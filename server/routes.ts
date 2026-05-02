@@ -2918,6 +2918,25 @@ export async function registerRoutes(
       
       const invoice = await routeStorage.createLocalInvoice(validatedInvoice, validatedLines);
       
+      // If an initial payment is included with the invoice, record it
+      const { initialPayment } = req.body;
+      let paymentRecord = null;
+      if (initialPayment && initialPayment.amountEgp && parseFloat(initialPayment.amountEgp) > 0) {
+        const paymentData = insertLocalPaymentSchema.parse({
+          partyId: invoice.partyId,
+          invoiceId: invoice.id,
+          paymentDate: initialPayment.paymentDate || invoice.invoiceDate,
+          amountEgp: initialPayment.amountEgp.toString(),
+          paymentMethod: initialPayment.paymentMethod || "نقدي",
+          notes: initialPayment.notes || null,
+          createdByUserId: userId,
+        });
+        const currentSeason = await routeStorage.getCurrentSeason(invoice.partyId);
+        if (currentSeason) paymentData.seasonId = currentSeason.id;
+        paymentData.createdByUserId = userId;
+        paymentRecord = await routeStorage.createLocalPayment(paymentData);
+      }
+
       auditLogger({
         userId,
         entityType: "LOCAL_INVOICE",
@@ -2926,7 +2945,7 @@ export async function registerRoutes(
         details: { invoiceKind: invoice.invoiceKind, partyId: invoice.partyId, totalEgp: invoice.totalEgp },
       });
       
-      res.json(invoice);
+      res.json({ ...invoice, payment: paymentRecord });
     } catch (error) {
       console.error("Error creating invoice:", error);
       if (error instanceof ZodError) {

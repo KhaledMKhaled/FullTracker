@@ -2488,7 +2488,7 @@ function PaymentDialog({
 }) {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split("T")[0]);
   const [amount, setAmount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentMethod, setPaymentMethod] = useState("نقدي");
   const [notes, setNotes] = useState("");
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string>("");
 
@@ -2623,9 +2623,12 @@ function PaymentDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="cash">نقداً</SelectItem>
-                <SelectItem value="bank">تحويل بنكي</SelectItem>
-                <SelectItem value="check">شيك</SelectItem>
+                <SelectItem value="نقدي">نقداً</SelectItem>
+                <SelectItem value="فودافون كاش">فودافون كاش</SelectItem>
+                <SelectItem value="إنستاباي">إنستاباي</SelectItem>
+                <SelectItem value="تحويل بنكي">تحويل بنكي</SelectItem>
+                <SelectItem value="شيك">شيك</SelectItem>
+                <SelectItem value="أخرى">أخرى</SelectItem>
               </SelectContent>
             </Select>
           </div>

@@ -915,6 +915,7 @@ export interface IStorage {
 
   // Local Invoices
   getAllLocalInvoices(filters?: { partyId?: number; invoiceKind?: string; status?: string }): Promise<LocalInvoice[]>;
+  getAllLocalInvoicesWithPayments(filters?: { partyId?: number; invoiceKind?: string; status?: string }): Promise<(LocalInvoice & { paidAmount: string; remainingAmount: string; paymentStatus: string })[]>;
   getLocalInvoice(id: number): Promise<{ invoice: LocalInvoice; lines: LocalInvoiceLine[] } | undefined>;
   createLocalInvoice(data: InsertLocalInvoice, lines: InsertLocalInvoiceLine[]): Promise<LocalInvoice>;
   updateLocalInvoice(id: number, data: Partial<InsertLocalInvoice>): Promise<LocalInvoice | undefined>;
@@ -4224,7 +4225,7 @@ export class DatabaseStorage implements IStorage {
         await tx.insert(partyLedgerEntries).values({
           partyId: data.partyId,
           seasonId: data.seasonId,
-          entryType: 'credit',
+          entryType: 'payment',
           sourceType: 'local_payment',
           sourceId: payment.id,
           amountEgp: (-paymentAmount).toString(),
