@@ -102,7 +102,7 @@ export default function CreateInvoicePage() {
   const urlParams = new URLSearchParams(window.location.search);
   const initialPartyId = urlParams.get("partyId") ? parseInt(urlParams.get("partyId")!) : null;
 
-  const [invoiceType, setInvoiceType] = useState<"purchase" | "sale">("sale");
+  const [invoiceType, setInvoiceType] = useState<"purchase" | "sale" | "sale_no_stock">("sale");
   const [partyId, setPartyId] = useState<number | null>(initialPartyId);
   const [invoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [referenceName, setReferenceName] = useState("");
@@ -125,6 +125,9 @@ export default function CreateInvoicePage() {
     }
   }, [invoiceType, merchantParties, customerParties, bothParties]);
 
+  // Derive effective invoice kind for API submission
+  const effectiveInvoiceKind = invoiceType === "sale_no_stock" ? "sale" : invoiceType;
+
   // Auto-set invoice type based on pre-selected party
   useEffect(() => {
     if (initialPartyId && allParties && !invoiceTypeInitialized) {
@@ -140,10 +143,16 @@ export default function CreateInvoicePage() {
     }
   }, [initialPartyId, allParties, invoiceTypeInitialized]);
 
+  // Find the locked party name when navigating from a party profile
+  const lockedParty = useMemo(() => {
+    if (!initialPartyId || !allParties) return null;
+    return (allParties as Party[]).find((p) => p.id === initialPartyId) || null;
+  }, [initialPartyId, allParties]);
+
   // Reset partyId when invoice type changes (only if not from URL initial load)
-  const handleInvoiceTypeChange = (type: "purchase" | "sale") => {
+  const handleInvoiceTypeChange = (type: "purchase" | "sale" | "sale_no_stock") => {
     setInvoiceType(type);
-    if (invoiceTypeInitialized) {
+    if (invoiceTypeInitialized && !initialPartyId) {
       setPartyId(null);
     }
   };
@@ -308,7 +317,8 @@ export default function CreateInvoicePage() {
     if (!isValid || !partyId) return;
 
     const invoiceData = {
-      invoiceKind: invoiceType,
+      invoiceKind: effectiveInvoiceKind,
+      ...(invoiceType === "sale_no_stock" ? { status: "posted" } : {}),
       partyId,
       invoiceDate,
       referenceName: referenceName || null,
@@ -377,7 +387,8 @@ export default function CreateInvoicePage() {
             <Label>نوع الفاتورة *</Label>
             <Select
               value={invoiceType}
-              onValueChange={(val: "purchase" | "sale") => handleInvoiceTypeChange(val)}
+              onValueChange={(val: "purchase" | "sale" | "sale_no_stock") => handleInvoiceTypeChange(val)}
+              disabled={!!initialPartyId && invoiceType === "purchase"}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -385,28 +396,37 @@ export default function CreateInvoicePage() {
               <SelectContent>
                 <SelectItem value="purchase">شراء (إضافة للمخزن)</SelectItem>
                 <SelectItem value="sale">بيع (خصم من المخزن)</SelectItem>
+                <SelectItem value="sale_no_stock">بيع بدون مخزون</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div>
             <Label>{invoiceType === "purchase" ? "اسم التاجر" : "اسم العميل"} *</Label>
-            <Select
-              value={partyId?.toString() || ""}
-              onValueChange={(val) => setPartyId(Number(val))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={invoiceType === "purchase" ? "اختر التاجر" : "اختر العميل"} />
-              </SelectTrigger>
-              <SelectContent>
-                {(parties as Party[] | undefined)?.map((party) => (
-                  <SelectItem key={party.id} value={party.id.toString()}>
-                    {party.name}
-                    {party.shopName && ` - ${party.shopName}`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {initialPartyId && lockedParty ? (
+              <Input
+                value={lockedParty.name + (lockedParty.shopName ? ` - ${lockedParty.shopName}` : "")}
+                readOnly
+                className="bg-muted font-medium"
+              />
+            ) : (
+              <Select
+                value={partyId?.toString() || ""}
+                onValueChange={(val) => setPartyId(Number(val))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={invoiceType === "purchase" ? "اختر التاجر" : "اختر العميل"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {(parties as Party[] | undefined)?.map((party) => (
+                    <SelectItem key={party.id} value={party.id.toString()}>
+                      {party.name}
+                      {party.shopName && ` - ${party.shopName}`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
 
           <div>

@@ -71,6 +71,7 @@ import {
   useCreateLocalPayment,
   useCreateLocalInvoice,
   useCreateSettlement,
+  useCreateReturnCase,
   usePartyCollections,
   usePartyTimeline,
   useUpsertPartyCollections,
@@ -261,6 +262,7 @@ export default function PartyProfilePage() {
   const [isSettlementDialogOpen, setIsSettlementDialogOpen] = useState(false);
   const [isInvoiceDialogOpen, setIsInvoiceDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isCreateReturnDialogOpen, setIsCreateReturnDialogOpen] = useState(false);
   
   const [invoiceStatusFilter, setInvoiceStatusFilter] = useState<string>("all");
   const [invoiceKindFilter, setInvoiceKindFilter] = useState<string>("all");
@@ -311,6 +313,7 @@ export default function PartyProfilePage() {
   const createPaymentMutation = useCreateLocalPayment();
   const createSettlementMutation = useCreateSettlement();
   const createInvoiceMutation = useCreateLocalInvoice();
+  const createReturnMutation = useCreateReturnCase();
   
   const { data: productTypes } = useQuery<ProductType[]>({
     queryKey: ["/api/product-types"],
@@ -615,6 +618,7 @@ export default function PartyProfilePage() {
             isLoading={isLoadingReturns}
             statusFilter={returnStatusFilter}
             setStatusFilter={setReturnStatusFilter}
+            onAddReturn={() => setIsCreateReturnDialogOpen(true)}
           />
         </TabsContent>
 
@@ -685,6 +689,26 @@ export default function PartyProfilePage() {
           );
         }}
         isLoading={updateMutation.isPending}
+      />
+
+      <CreatePartyReturnDialog
+        open={isCreateReturnDialogOpen}
+        onOpenChange={setIsCreateReturnDialogOpen}
+        partyId={partyId}
+        partyName={partyData.name}
+        invoices={(invoices as Invoice[]) || []}
+        onSubmit={(data) => {
+          createReturnMutation.mutate(data, {
+            onSuccess: () => {
+              toast({ title: "تم إنشاء حالة الهامش بنجاح" });
+              setIsCreateReturnDialogOpen(false);
+            },
+            onError: (error) => {
+              toast({ title: getErrorMessage(error), variant: "destructive" });
+            },
+          });
+        }}
+        isLoading={createReturnMutation.isPending}
       />
 
       <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
@@ -1314,15 +1338,17 @@ function ReturnsTab({
   isLoading,
   statusFilter,
   setStatusFilter,
+  onAddReturn,
 }: {
   returnCases: ReturnCase[];
   isLoading: boolean;
   statusFilter: string;
   setStatusFilter: (value: string) => void;
+  onAddReturn: () => void;
 }) {
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
           <Label>الحالة:</Label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -1336,6 +1362,10 @@ function ReturnsTab({
             </SelectContent>
           </Select>
         </div>
+        <Button size="sm" variant="outline" onClick={onAddReturn}>
+          <Plus className="w-4 h-4 ml-1" />
+          هامش يدوي جديد
+        </Button>
       </div>
 
       {isLoading ? (
@@ -1387,6 +1417,105 @@ function ReturnsTab({
         </div>
       )}
     </div>
+  );
+}
+
+function CreatePartyReturnDialog({
+  open,
+  onOpenChange,
+  partyId,
+  partyName,
+  invoices,
+  onSubmit,
+  isLoading,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  partyId: number;
+  partyName: string;
+  invoices: Invoice[];
+  onSubmit: (data: Record<string, unknown>) => void;
+  isLoading: boolean;
+}) {
+  const [invoiceId, setInvoiceId] = useState<number | null>(null);
+  const [description, setDescription] = useState("");
+
+  const handleSubmit = () => {
+    if (!invoiceId || !description.trim()) return;
+    onSubmit({ partyId, invoiceId, description: description.trim() });
+  };
+
+  const resetForm = () => {
+    setInvoiceId(null);
+    setDescription("");
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(val) => {
+        if (!val) resetForm();
+        onOpenChange(val);
+      }}
+    >
+      <DialogContent className="max-w-md" dir="rtl">
+        <DialogHeader>
+          <DialogTitle>هامش يدوي جديد</DialogTitle>
+          <DialogDescription>
+            إنشاء حالة هامش يدوية للملف: <span className="font-semibold">{partyName}</span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label>الفاتورة المرتبطة *</Label>
+            <Select
+              value={invoiceId?.toString() || ""}
+              onValueChange={(val) => setInvoiceId(Number(val))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="اختر الفاتورة..." />
+              </SelectTrigger>
+              <SelectContent>
+                {invoices.map((inv) => (
+                  <SelectItem key={inv.id} value={inv.id.toString()}>
+                    <span className="font-mono">{inv.invoiceNumber}</span>
+                    <span className="text-muted-foreground mr-2 text-xs">
+                      {inv.invoiceKind === "purchase" ? "شراء" : "بيع"} — {parseFloat(inv.totalEgp).toLocaleString("ar-EG")} ج.م
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {invoices.length === 0 && (
+              <p className="text-xs text-muted-foreground">لا توجد فواتير لهذا الملف</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label>وصف الهامش *</Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="اكتب وصف المشكلة أو سبب الهامش..."
+              rows={3}
+            />
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 mt-4">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            إلغاء
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={isLoading || !invoiceId || !description.trim()}
+          >
+            {isLoading ? "جاري الحفظ..." : "إنشاء الحالة"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
