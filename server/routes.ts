@@ -2867,15 +2867,6 @@ export async function registerRoutes(
         insertLocalInvoiceLineSchema.omit({ invoiceId: true }).parse(line)
       );
       
-      // Validate dozen (دستة) unit quantities
-      for (const line of validatedLines) {
-        if (line.unitMode === 'dozen' && (line.totalPieces || 0) % 12 !== 0) {
-          return res.status(400).json({
-            message: `الكمية ${line.totalPieces} لا يمكن تقسيمها على 12. يجب أن تكون الكمية بالدستة قابلة للقسمة على 12.`
-          });
-        }
-      }
-      
       // Check credit limit for credit parties
       const party = await routeStorage.getParty(validatedInvoice.partyId);
       if (!party) {
