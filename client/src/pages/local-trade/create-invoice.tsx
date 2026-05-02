@@ -8,6 +8,9 @@ import {
   Trash2,
   ArrowRight,
   CreditCard,
+  PackageCheck,
+  ShoppingCart,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -409,26 +412,63 @@ export default function CreateInvoicePage() {
         </div>
       </div>
 
-      <div className="sticky top-0 z-10 bg-background border-b pb-4 pt-4 -mx-6 px-6">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          <div>
-            <Label>نوع الفاتورة *</Label>
-            <Select
-              value={invoiceType}
-              onValueChange={(val: "purchase" | "sale" | "sale_no_stock") => handleInvoiceTypeChange(val)}
-              disabled={!!initialPartyId && invoiceType === "purchase"}
+      {/* Invoice Type Selector — prominent cards */}
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          {
+            value: "purchase" as const,
+            icon: PackageCheck,
+            label: "فاتورة شراء",
+            sub: "استلام بضاعة من تاجر",
+            activeClass: "border-blue-500 bg-blue-50 text-blue-800",
+            iconClass: "text-blue-600",
+          },
+          {
+            value: "sale" as const,
+            icon: ShoppingCart,
+            label: "فاتورة بيع",
+            sub: "بيع للعميل من المخزن",
+            activeClass: "border-green-500 bg-green-50 text-green-800",
+            iconClass: "text-green-600",
+          },
+          {
+            value: "sale_no_stock" as const,
+            icon: Zap,
+            label: "بيع بدون مخزون",
+            sub: "بيع مباشر بدون خصم",
+            activeClass: "border-orange-500 bg-orange-50 text-orange-800",
+            iconClass: "text-orange-600",
+          },
+        ].map((opt) => {
+          const isActive = invoiceType === opt.value;
+          const isDisabled = !!initialPartyId;
+          const Icon = opt.icon;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              disabled={isDisabled}
+              onClick={() => !isDisabled && handleInvoiceTypeChange(opt.value)}
+              className={`flex flex-col items-center justify-center gap-2 p-4 rounded-xl border-2 transition-all w-full
+                ${isActive ? opt.activeClass + " shadow-sm" : "border-border bg-card hover:border-muted-foreground/50"}
+                ${isDisabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}
+              `}
             >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="purchase">شراء (إضافة للمخزن)</SelectItem>
-                <SelectItem value="sale">بيع (خصم من المخزن)</SelectItem>
-                <SelectItem value="sale_no_stock">بيع بدون مخزون</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+              <Icon className={`w-7 h-7 ${isActive ? opt.iconClass : "text-muted-foreground"}`} />
+              <div className="text-center">
+                <div className={`font-bold text-sm ${isActive ? "" : "text-foreground"}`}>{opt.label}</div>
+                <div className={`text-xs mt-0.5 ${isActive ? "opacity-80" : "text-muted-foreground"}`}>{opt.sub}</div>
+              </div>
+              {isActive && (
+                <div className={`w-2 h-2 rounded-full ${opt.iconClass.replace("text-", "bg-")}`} />
+              )}
+            </button>
+          );
+        })}
+      </div>
 
+      <div className="sticky top-0 z-10 bg-background border-b pb-4 pt-4 -mx-6 px-6">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <Label>{invoiceType === "purchase" ? "اسم التاجر" : "اسم العميل"} *</Label>
             {initialPartyId && lockedParty ? (

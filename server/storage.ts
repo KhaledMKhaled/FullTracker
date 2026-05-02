@@ -4115,8 +4115,6 @@ export class DatabaseStorage implements IStorage {
     const partyData = await this.getParty(invoice.partyId);
     const partyTypeSnapshot = partyData?.type || 'merchant';
 
-    await this.updateLocalInvoice(invoiceId, { status: 'received' });
-
     const receipt = await this.createReceipt({
       invoiceId,
       receivingStatus: 'received',
@@ -4174,6 +4172,10 @@ export class DatabaseStorage implements IStorage {
         }
       }
     }
+
+    // Set final status based on whether there were any shortages
+    const finalStatus = marginsCreated > 0 ? 'partially_received' : 'received';
+    await this.updateLocalInvoice(invoiceId, { status: finalStatus });
 
     return { receipt, movementsCreated, marginsCreated };
   }
