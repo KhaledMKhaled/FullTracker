@@ -4669,7 +4669,7 @@ export class DatabaseStorage implements IStorage {
     }).from(returnCases)
       .where(and(
         eq(returnCases.partyId, partyId),
-        eq(returnCases.status, "pending")
+        eq(returnCases.status, "under_inspection")
       ));
 
     const lastInvoice = await db.select({ date: localInvoices.invoiceDate })

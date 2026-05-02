@@ -570,8 +570,11 @@ export default function PartyProfilePage() {
           </div>
         </Card>
         <Card className="p-3">
-          <div className="text-xs text-muted-foreground">تحت الفحص</div>
+          <div className="text-xs text-muted-foreground">هوامش تحت الفحص</div>
           <div className="text-lg font-bold text-amber-600">{formatCurrency(summary?.kpis?.underInspectionEgp || 0)} ج.م</div>
+          {(summary?.kpis?.pendingReturnsCount || 0) > 0 && (
+            <div className="text-xs text-amber-500 mt-0.5">{summary.kpis.pendingReturnsCount} حالة مفتوحة</div>
+          )}
         </Card>
         <Card className="p-3">
           <div className="text-xs text-muted-foreground">آخر فاتورة</div>
