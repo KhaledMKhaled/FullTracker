@@ -248,6 +248,12 @@ export function useResolveReturnCase() {
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/payments"] });
       queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
+      // Invalidate ledger so كشف الحساب reflects the resolution entry
+      queryClient.invalidateQueries({ queryKey: ["/api/local-trade/parties"] });
+      queryClient.invalidateQueries({ predicate: (q) => {
+        const key = q.queryKey as string[];
+        return Array.isArray(key) && key.some(k => typeof k === 'string' && k.includes('ledger'));
+      }});
     },
   });
 }

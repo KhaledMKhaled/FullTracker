@@ -4489,15 +4489,15 @@ export class DatabaseStorage implements IStorage {
       let ledgerNote = '';
       let entryType: 'credit' | 'debit' | 'adjustment' = 'adjustment';
 
+      // Sign convention: positive=مدين(they owe us), negative=دائن(we owe them)
+      // customer (sale):    return/deduct → they owe us less → -amountEgp
+      // merchant (purchase): return/deduct → we owe them less → +amountEgp
+      const isMerchant = partyType === 'merchant';
+
       switch (resolution) {
         case 'accepted_return':
-          if (partyType === 'customer') {
-            ledgerAmount = -amountEgp;
-            entryType = 'credit';
-          } else {
-            ledgerAmount = -amountEgp;
-            entryType = 'debit';
-          }
+          ledgerAmount = isMerchant ? amountEgp : -amountEgp;
+          entryType = isMerchant ? 'debit' : 'credit';
           ledgerNote = `هامش مقبول - ${quantity} قطعة`;
           // Create invoice allocation so paidAmount reflects the returned amount
           if (existingCase.sourceInvoiceId && amountEgp > 0) {
@@ -4517,7 +4517,7 @@ export class DatabaseStorage implements IStorage {
           break;
 
         case 'deduct_value':
-          ledgerAmount = -amountEgp;
+          ledgerAmount = isMerchant ? amountEgp : -amountEgp;
           entryType = 'credit';
           ledgerNote = `خصم قيمة - ${amountEgp.toFixed(2)} ج.م`;
           // Create invoice allocation so paidAmount reflects the deducted value
@@ -4535,6 +4535,12 @@ export class DatabaseStorage implements IStorage {
           ledgerAmount = 0;
           entryType = 'adjustment';
           ledgerNote = `شطب تالف - ${quantity} قطعة`;
+          break;
+
+        case 'rejected':
+          ledgerAmount = 0;
+          entryType = 'adjustment';
+          ledgerNote = `هامش مرفوض - ${quantity} قطعة`;
           break;
       }
 

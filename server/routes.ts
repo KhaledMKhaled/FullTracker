@@ -3134,7 +3134,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "يجب تحديد نوع الحل" });
       }
       
-      const validResolutions = ['accepted_return', 'exchange', 'deduct_value', 'damaged'];
+      const validResolutions = ['accepted_return', 'exchange', 'deduct_value', 'damaged', 'rejected'];
       if (!validResolutions.includes(resolution)) {
         return res.status(400).json({ message: "نوع الحل غير صحيح" });
       }
@@ -3144,7 +3144,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "يجب تحديد قيمة المبلغ (أكبر من صفر)" });
       }
       
-      const finalAmountEgp = (resolution === 'exchange' || resolution === 'damaged') ? 0 : (amountEgp ?? 0);
+      const noAmountResolutions = ['exchange', 'damaged', 'rejected'];
+      const finalAmountEgp = noAmountResolutions.includes(resolution) ? 0 : (amountEgp ?? 0);
       
       const resolveData = {
         resolution,

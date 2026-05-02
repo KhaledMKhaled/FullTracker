@@ -2345,10 +2345,37 @@ function ResolveReturnCaseDialog({
                 placeholder="0.00"
                 required
               />
-              {resolution === "deduct_value" && returnCase.sourceInvoiceId && (
-                <p className="text-xs text-blue-600">سيتم خصم هذا المبلغ من رصيد الفاتورة المصدر تلقائياً</p>
+              {resolution === "deduct_value" && (
+                <p className="text-xs text-blue-600">
+                  {returnCase.sourceInvoiceId
+                    ? "سيتم خصم هذا المبلغ من رصيد الفاتورة المصدر تلقائياً"
+                    : "سيتم تسجيل المبلغ في كشف الحساب كخصم"}
+                </p>
+              )}
+              {resolution === "accepted_return" && (
+                <p className="text-xs text-green-700">
+                  {returnCase.sourceInvoiceId
+                    ? "سيتم خصم قيمة المرتجع من رصيد الفاتورة المصدر"
+                    : "سيتم تسجيل المرتجع في كشف الحساب"}
+                </p>
               )}
             </div>
+          )}
+
+          {resolution === "exchange" && (
+            <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
+              الاستبدال لا يؤثر على الرصيد — سيتم تسجيل الحالة فقط
+            </p>
+          )}
+          {resolution === "damaged" && (
+            <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
+              الشطب التالف لا يؤثر على الرصيد — سيتم تسجيل الحالة فقط
+            </p>
+          )}
+          {resolution === "rejected" && (
+            <p className="text-xs text-muted-foreground bg-muted p-2 rounded">
+              الرفض لا يؤثر على الرصيد — سيتم إغلاق الحالة بدون تسوية مالية
+            </p>
           )}
 
           <div className="grid grid-cols-2 gap-3">
