@@ -546,14 +546,12 @@ export default function PartyProfilePage() {
               <FileSpreadsheet className="w-4 h-4 ml-1" />
               فاتورة جديدة
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setIsEditDialogOpen(true)}>
-              <Edit className="w-4 h-4 ml-1" />
-              تعديل
+            <Button size="icon" variant="outline" className="h-8 w-8" title="تعديل" onClick={() => setIsEditDialogOpen(true)}>
+              <Edit className="w-4 h-4" />
             </Button>
             {isAdmin && (
-              <Button size="sm" variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
-                <Trash2 className="w-4 h-4 ml-1" />
-                حذف
+              <Button size="icon" variant="outline" className="h-8 w-8 text-destructive hover:bg-destructive hover:text-destructive-foreground border-destructive/40" title="حذف" onClick={() => setIsDeleteDialogOpen(true)}>
+                <Trash2 className="w-4 h-4" />
               </Button>
             )}
           </div>
