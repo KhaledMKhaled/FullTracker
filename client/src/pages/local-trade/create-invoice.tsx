@@ -441,7 +441,16 @@ export default function CreateInvoicePage() {
           },
         ].map((opt) => {
           const isActive = invoiceType === opt.value;
-          const isDisabled = !!initialPartyId;
+          // Disable based on locked party type:
+          // merchant → only purchase allowed
+          // customer → only sale/sale_no_stock allowed
+          // both / no party → all allowed
+          const lockedType = lockedParty?.type;
+          const isDisabled = lockedType === "merchant"
+            ? opt.value !== "purchase"
+            : lockedType === "customer"
+              ? opt.value === "purchase"
+              : false;
           const Icon = opt.icon;
           return (
             <button
