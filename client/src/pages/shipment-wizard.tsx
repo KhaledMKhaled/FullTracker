@@ -24,7 +24,7 @@ import {
   FileDown,
 } from "lucide-react";
 import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
+import { jsPDF } from "@/lib/jspdf-stub";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

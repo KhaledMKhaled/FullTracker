@@ -2547,8 +2547,7 @@ function LedgerTab({
       return;
     }
 
-    const { jsPDF } = await import("jspdf");
-    await import("jspdf-autotable");
+    const { jsPDF } = await import("@/lib/jspdf-stub");
     
     const doc = new jsPDF({
       orientation: "portrait",

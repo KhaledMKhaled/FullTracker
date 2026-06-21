@@ -15,7 +15,6 @@
     "seed:local-trade": "tsx scripts/seed-local-trade.ts"
   },
   "dependencies": {
-    "@google-cloud/storage": "^7.18.0",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@radix-ui/react-accordion": "^1.2.4",
@@ -70,12 +69,9 @@
     "express-session": "^1.18.1",
     "framer-motion": "^11.13.1",
     "glob": "^13.0.0",
-    "google-auth-library": "^10.5.0",
     "html-to-image": "^1.11.13",
     "html2canvas": "^1.4.1",
     "input-otp": "^1.4.2",
-    "jspdf": "^3.0.4",
-    "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.453.0",
     "memoizee": "^0.4.17",
     "memorystore": "^1.6.7",
