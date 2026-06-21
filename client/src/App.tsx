@@ -37,6 +37,9 @@ const InvoicesPage = lazy(() => import("@/pages/local-trade/invoices"));
 const CreateInvoicePage = lazy(() => import("@/pages/local-trade/create-invoice"));
 const LocalPaymentsPage = lazy(() => import("@/pages/local-trade/payments"));
 const ReturnsPage = lazy(() => import("@/pages/local-trade/returns"));
+const LocalTradeDashboardPage = lazy(() => import("@/pages/local-trade/dashboard"));
+const LocalTradeReportsPage = lazy(() => import("@/pages/local-trade/reports"));
+const LocalTradeNotesPage = lazy(() => import("@/pages/local-trade/notes"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 
 function AuthenticatedRouter() {
@@ -61,6 +64,9 @@ function AuthenticatedRouter() {
         <Route path="/movement-report" component={MovementReportPage} />
         <Route path="/payment-methods-report" component={PaymentMethodsReportPage} />
         <Route path="/backup" component={BackupPage} />
+        <Route path="/local-trade/dashboard" component={LocalTradeDashboardPage} />
+        <Route path="/local-trade/reports" component={LocalTradeReportsPage} />
+        <Route path="/local-trade/notes" component={LocalTradeNotesPage} />
         <Route path="/local-trade/parties" component={PartiesPage} />
         <Route path="/local-trade/parties/:id" component={PartyProfilePage} />
         <Route path="/local-trade/invoices" component={InvoicesPage} />

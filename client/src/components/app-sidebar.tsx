@@ -17,6 +17,8 @@ import {
   RotateCcw,
   FileText,
   Wallet,
+  BarChart2,
+  StickyNote,
 } from "lucide-react";
 import {
   Sidebar,
@@ -95,6 +97,12 @@ const menuItems = [
 
 const localTradeItems = [
   {
+    title: "لوحة التحكم",
+    url: "/local-trade/dashboard",
+    icon: LayoutDashboard,
+    tooltip: "نظرة عامة على التجارة المحلية",
+  },
+  {
     title: "الملفات",
     url: "/local-trade/parties",
     icon: Users,
@@ -117,6 +125,18 @@ const localTradeItems = [
     url: "/local-trade/returns",
     icon: RotateCcw,
     tooltip: "إدارة حالات المرتجعات والهوامش",
+  },
+  {
+    title: "التقارير",
+    url: "/local-trade/reports",
+    icon: BarChart2,
+    tooltip: "تقارير شاملة للفواتير والمدفوعات والأرصدة",
+  },
+  {
+    title: "الملحوظات",
+    url: "/local-trade/notes",
+    icon: StickyNote,
+    tooltip: "جميع الملحوظات المسجلة على الفواتير والمدفوعات",
   },
 ];
 
