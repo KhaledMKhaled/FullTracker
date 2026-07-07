@@ -1924,7 +1924,11 @@ export async function registerRoutes(
 
     const attachmentUrl = payment.attachmentUrl;
     const disposition = options.inline ? "inline" : "attachment";
-    const filename = payment.attachmentOriginalName || "attachment";
+    const rawFilename = payment.attachmentOriginalName || "attachment";
+    // Sanitize for Content-Disposition: ASCII fallback + RFC 5987 encoded full name
+    const asciiFallback = rawFilename.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_") || "attachment";
+    const encodedFilename = encodeURIComponent(rawFilename);
+    const contentDisposition = (d: string) => `${d}; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
     console.log(`[Attachment] Serving payment ${paymentId}, path: ${attachmentUrl}, mimeType: ${payment.attachmentMimeType}`);
 
     // Check if attachment is in Object Storage (persistent)
@@ -1946,7 +1950,7 @@ export async function registerRoutes(
         }
         
         res.setHeader("Content-Type", payment.attachmentMimeType || metadata.contentType || "application/octet-stream");
-        res.setHeader("Content-Disposition", `${disposition}; filename="${filename}"`);
+        res.setHeader("Content-Disposition", contentDisposition(disposition));
         return await objectStorageService.downloadObject(objectFile, res);
       } catch (error: any) {
         console.error("Error serving payment attachment from Object Storage:", error?.message || error);
@@ -1990,7 +1994,7 @@ export async function registerRoutes(
     }
 
     res.setHeader("Content-Type", payment.attachmentMimeType || "application/octet-stream");
-    res.setHeader("Content-Disposition", `${disposition}; filename="${filename}"`);
+    res.setHeader("Content-Disposition", contentDisposition(disposition));
     return res.sendFile(absolutePath);
   };
 
