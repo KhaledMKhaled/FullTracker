@@ -27,16 +27,24 @@ function resolveLocalPath(backupPath: string): string {
   return path.join(process.cwd(), backupPath.replace(/^local:/, ""));
 }
 
-async function saveZipBuffer(zipBuffer: Buffer, remotePath: string, localFileName: string): Promise<string> {
+function saveZipBufferLocally(zipBuffer: Buffer, localFileName: string): string {
+  if (!fs.existsSync(LOCAL_BACKUP_DIR)) fs.mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
+  const localFilePath = path.join(LOCAL_BACKUP_DIR, localFileName);
+  fs.writeFileSync(localFilePath, zipBuffer);
+  return `local:uploads/backups/${localFileName}`;
+}
+
+async function saveZipBuffer(zipBuffer: Buffer, remotePath: string | null, localFileName: string): Promise<string> {
+  if (!remotePath) {
+    console.log("[backupService] Object Storage not configured, saving backup to local disk");
+    return saveZipBufferLocally(zipBuffer, localFileName);
+  }
   try {
     await objectStorage.uploadObjectFromBuffer(remotePath, zipBuffer, "application/zip");
     return remotePath;
   } catch (err) {
     console.warn("[backupService] Object Storage unavailable, saving to local disk:", err);
-    if (!fs.existsSync(LOCAL_BACKUP_DIR)) fs.mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
-    const localFilePath = path.join(LOCAL_BACKUP_DIR, localFileName);
-    fs.writeFileSync(localFilePath, zipBuffer);
-    return `local:uploads/backups/${localFileName}`;
+    return saveZipBufferLocally(zipBuffer, localFileName);
   }
 }
 
@@ -450,12 +458,12 @@ export async function startBackup(userId: string): Promise<BackupJob> {
       await updateJobProgress(job.id, 85);
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      let remotePath: string;
+      let remotePath: string | null = null;
       try {
         const { bucketName } = objectStorage.getBucketAndPrefix();
         remotePath = `/${bucketName}/backups/${timestamp}.zip`;
       } catch {
-        remotePath = `__local__/backups/${timestamp}.zip`;
+        remotePath = null;
       }
 
       const backupPath = await saveZipBuffer(zipBuffer, remotePath, `${timestamp}.zip`);
