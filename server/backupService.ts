@@ -1,5 +1,7 @@
 import { exec, spawn } from "child_process";
 import { promisify } from "util";
+import fs from "fs";
+import path from "path";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import { PassThrough } from "stream";
@@ -14,6 +16,40 @@ const PG_DUMP_PATH = "/nix/store/r8ivqqhsp8v042nhw5sap9kz2g6ar4v1-postgresql-16.
 const PSQL_PATH = "/nix/store/r8ivqqhsp8v042nhw5sap9kz2g6ar4v1-postgresql-16.9/bin/psql";
 
 const objectStorage = new ObjectStorageService();
+
+const LOCAL_BACKUP_DIR = path.join(process.cwd(), "uploads", "backups");
+
+function isLocalPath(backupPath: string): boolean {
+  return backupPath.startsWith("local:");
+}
+
+function resolveLocalPath(backupPath: string): string {
+  return path.join(process.cwd(), backupPath.replace(/^local:/, ""));
+}
+
+async function saveZipBuffer(zipBuffer: Buffer, remotePath: string, localFileName: string): Promise<string> {
+  try {
+    await objectStorage.uploadObjectFromBuffer(remotePath, zipBuffer, "application/zip");
+    return remotePath;
+  } catch (err) {
+    console.warn("[backupService] Object Storage unavailable, saving to local disk:", err);
+    if (!fs.existsSync(LOCAL_BACKUP_DIR)) fs.mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
+    const localFilePath = path.join(LOCAL_BACKUP_DIR, localFileName);
+    fs.writeFileSync(localFilePath, zipBuffer);
+    return `local:uploads/backups/${localFileName}`;
+  }
+}
+
+async function readZipBuffer(backupPath: string): Promise<Buffer> {
+  if (isLocalPath(backupPath)) {
+    const localFilePath = resolveLocalPath(backupPath);
+    if (!fs.existsSync(localFilePath)) {
+      throw new Error(`Backup file not found: ${localFilePath}`);
+    }
+    return fs.readFileSync(localFilePath);
+  }
+  return objectStorage.downloadObjectToBuffer(backupPath);
+}
 
 interface BackupManifest {
   version: string;
@@ -377,10 +413,15 @@ export async function startBackup(userId: string): Promise<BackupJob> {
       await updateJobProgress(job.id, 85);
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const { bucketName } = objectStorage.getBucketAndPrefix();
-      const backupPath = `/${bucketName}/backups/${timestamp}.zip`;
+      let remotePath: string;
+      try {
+        const { bucketName } = objectStorage.getBucketAndPrefix();
+        remotePath = `/${bucketName}/backups/${timestamp}.zip`;
+      } catch {
+        remotePath = `__local__/backups/${timestamp}.zip`;
+      }
 
-      await objectStorage.uploadObjectFromBuffer(backupPath, zipBuffer, "application/zip");
+      const backupPath = await saveZipBuffer(zipBuffer, remotePath, `${timestamp}.zip`);
 
       await updateJobProgress(job.id, 95);
 
@@ -412,7 +453,7 @@ export async function startRestore(userId: string, backupPath: string): Promise<
     try {
       await updateJobProgress(job.id, 5);
 
-      const zipBuffer = await objectStorage.downloadObjectToBuffer(backupPath);
+      const zipBuffer = await readZipBuffer(backupPath);
       await updateJobProgress(job.id, 20);
 
       const zip = new AdmZip(zipBuffer);
@@ -439,15 +480,28 @@ export async function startRestore(userId: string, backupPath: string): Promise<
       const totalMedia = mediaEntries.length;
       let restoredCount = 0;
 
-      const { bucketName } = objectStorage.getBucketAndPrefix();
+      let bucketName: string | null = null;
+      try {
+        bucketName = objectStorage.getBucketAndPrefix().bucketName;
+      } catch {
+        console.warn("[backupService] Object Storage not available, media files will not be restored to cloud");
+      }
 
       for (const entry of mediaEntries) {
         try {
           const objectPath = entry.entryName.replace(/^media\//, "");
           const buffer = entry.getData();
-          const uploadPath = `/${bucketName}/${objectPath}`;
-          const contentType = getContentType(objectPath);
-          await objectStorage.uploadObjectFromBuffer(uploadPath, buffer, contentType);
+          if (bucketName) {
+            const uploadPath = `/${bucketName}/${objectPath}`;
+            const contentType = getContentType(objectPath);
+            await objectStorage.uploadObjectFromBuffer(uploadPath, buffer, contentType);
+          } else {
+            // Fallback: save media to local uploads directory
+            const localMediaPath = path.join(process.cwd(), "uploads", objectPath);
+            const localMediaDir = path.dirname(localMediaPath);
+            if (!fs.existsSync(localMediaDir)) fs.mkdirSync(localMediaDir, { recursive: true });
+            fs.writeFileSync(localMediaPath, buffer);
+          }
         } catch (err) {
           console.warn(`Could not restore ${entry.entryName}:`, err);
         }

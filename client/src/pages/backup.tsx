@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Database,
@@ -11,6 +11,7 @@ import {
   Clock,
   RefreshCw,
   Upload,
+  FileArchive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,6 +116,11 @@ export default function BackupPage() {
   const [selectedBackupId, setSelectedBackupId] = useState<number | null>(null);
   const [uploadedBackupPath, setUploadedBackupPath] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [uploadedFileSize, setUploadedFileSize] = useState<number | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const xhrRef = useRef<XMLHttpRequest | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -175,49 +181,93 @@ export default function BackupPage() {
     },
   });
 
-  const uploadBackupMutation = useMutation({
-    mutationFn: async (file: File) => {
+  const uploadFileWithProgress = useCallback((file: File): Promise<{ backupPath: string; fileName: string }> => {
+    return new Promise((resolve, reject) => {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/backup/upload", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || "فشل في رفع الملف");
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      console.log("[upload] Upload successful:", data);
-      toast({ title: "تم رفع النسخة الاحتياطية بنجاح" });
-      setUploadedBackupPath(data.backupPath);
-      setIsUploadRestoreDialogOpen(true);
-    },
-    onError: (error: Error) => {
-      toast({ title: error.message || "حدث خطأ أثناء رفع النسخة الاحتياطية", variant: "destructive" });
-    },
-  });
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const xhr = new XMLHttpRequest();
+      xhrRef.current = xhr;
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const pct = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(pct);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch {
+            reject(new Error("استجابة غير صالحة من الخادم"));
+          }
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText);
+            reject(new Error(err.message || `فشل الرفع (${xhr.status})`));
+          } catch {
+            reject(new Error(`فشل الرفع (${xhr.status})`));
+          }
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("خطأ في الاتصال بالشبكة أثناء الرفع"));
+      xhr.onabort = () => reject(new Error("تم إلغاء الرفع"));
+      xhr.ontimeout = () => reject(new Error("انتهت مهلة الرفع، الملف كبير جداً"));
+
+      xhr.open("POST", "/api/backup/upload");
+      xhr.withCredentials = true;
+      xhr.timeout = 30 * 60 * 1000; // 30 minutes timeout for large files
+      xhr.send(formData);
+    });
+  }, []);
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
-    if (file) {
-      if (!file.name.endsWith(".zip")) {
-        toast({ title: "يجب أن يكون الملف بصيغة ZIP", variant: "destructive" });
-        return;
-      }
-      setUploadedFileName(file.name);
-      uploadBackupMutation.mutate(file);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+
+    if (!file) return;
+
+    if (!file.name.endsWith(".zip")) {
+      toast({ title: "يجب أن يكون الملف بصيغة ZIP", variant: "destructive" });
+      return;
     }
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+
+    setUploadedFileName(file.name);
+    setUploadedFileSize(file.size);
+    setUploadProgress(0);
+    setUploadError(null);
+    setIsUploading(true);
+
+    try {
+      const data = await uploadFileWithProgress(file);
+      setUploadedBackupPath(data.backupPath);
+      setIsUploading(false);
+      toast({ title: "تم رفع النسخة الاحتياطية بنجاح" });
+      setIsUploadRestoreDialogOpen(true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "حدث خطأ أثناء رفع الملف";
+      setUploadError(msg);
+      setIsUploading(false);
+      setUploadProgress(0);
+      toast({ title: msg, variant: "destructive" });
     }
   };
 
   const handleUploadClick = () => {
+    if (isUploading) return;
     fileInputRef.current?.click();
+  };
+
+  const handleCancelUpload = () => {
+    xhrRef.current?.abort();
+    setIsUploading(false);
+    setUploadProgress(0);
+    setUploadedFileName(null);
+    setUploadError(null);
   };
 
   const handleConfirmUploadRestore = () => {
@@ -273,7 +323,7 @@ export default function BackupPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6" dir="rtl">
       <div className="flex justify-between items-center gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-semibold">النسخ الاحتياطي والاستعادة</h1>
@@ -293,10 +343,10 @@ export default function BackupPage() {
           <Button
             variant="outline"
             onClick={handleUploadClick}
-            disabled={uploadBackupMutation.isPending}
+            disabled={isUploading}
             data-testid="button-upload-backup"
           >
-            {uploadBackupMutation.isPending ? (
+            {isUploading ? (
               <Loader2 className="w-4 h-4 ml-2 animate-spin" />
             ) : (
               <Upload className="w-4 h-4 ml-2" />
@@ -317,6 +367,72 @@ export default function BackupPage() {
           </Button>
         </div>
       </div>
+
+      {/* Upload Progress Card */}
+      {(isUploading || uploadError) && (
+        <Card className={`border-2 ${uploadError ? "border-destructive/50" : "border-primary/30"}`}>
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                uploadError
+                  ? "bg-red-100 dark:bg-red-900/30"
+                  : "bg-primary/10"
+              }`}>
+                {uploadError ? (
+                  <XCircle className="w-5 h-5 text-destructive" />
+                ) : (
+                  <FileArchive className="w-5 h-5 text-primary" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <div>
+                    <p className="font-medium text-sm truncate max-w-xs">{uploadedFileName}</p>
+                    {uploadedFileSize && (
+                      <p className="text-xs text-muted-foreground">{formatFileSize(uploadedFileSize)}</p>
+                    )}
+                  </div>
+                  {isUploading && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-primary">{uploadProgress}%</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground h-7 px-2 text-xs"
+                        onClick={handleCancelUpload}
+                      >
+                        إلغاء
+                      </Button>
+                    </div>
+                  )}
+                </div>
+                {uploadError ? (
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm text-destructive">{uploadError}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      onClick={handleUploadClick}
+                    >
+                      إعادة المحاولة
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <Progress value={uploadProgress} className="h-2.5" />
+                    <p className="text-xs text-muted-foreground">
+                      {uploadProgress < 100
+                        ? "جاري رفع الملف إلى الخادم..."
+                        : "اكتمل الرفع، جارٍ المعالجة..."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
