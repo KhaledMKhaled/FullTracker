@@ -69,6 +69,7 @@ interface BackupManifest {
   mediaFiles: {
     count: number;
     totalSize: number;
+    byFolder?: Record<string, number>;
   };
   files: string[];
 }
@@ -371,42 +372,60 @@ export async function startBackup(userId: string): Promise<BackupJob> {
       const totalMedia = mediaObjects.length;
       let downloadedCount = 0;
 
+      const failedFiles: string[] = [];
+
       for (const obj of mediaObjects) {
         try {
           const buffer = await objectStorage.downloadObjectToBuffer(`/${obj.path}`);
           mediaBuffers.set(obj.path, { buffer, contentType: obj.contentType });
         } catch (err) {
           console.warn(`Could not download ${obj.path}:`, err);
+          failedFiles.push(`media/${obj.path}`);
         }
         downloadedCount++;
         const downloadProgress = 35 + Math.floor((downloadedCount / Math.max(totalMedia, 1)) * 20);
         await updateJobProgress(job.id, downloadProgress);
       }
 
-      // Collect local upload files (items + payments)
+      // Collect ALL local upload files under uploads/ (recursively), excluding uploads/backups/
       const localUploads: Map<string, { buffer: Buffer; contentType: string }> = new Map();
-      const localUploadDirs = [
-        { dir: path.join(process.cwd(), "uploads", "items"), prefix: "items" },
-        { dir: path.join(process.cwd(), "uploads", "payments"), prefix: "payments" },
-        { dir: path.join(process.cwd(), "uploads", "invoices"), prefix: "invoices" },
-      ];
-      for (const { dir, prefix } of localUploadDirs) {
-        if (fs.existsSync(dir)) {
-          const files = fs.readdirSync(dir);
-          for (const file of files) {
-            try {
-              const filePath = path.join(dir, file);
-              if (fs.statSync(filePath).isFile()) {
-                const buffer = fs.readFileSync(filePath);
-                localUploads.set(`${prefix}/${file}`, { buffer, contentType: getContentType(file) });
-              }
-            } catch (err) {
-              console.warn(`Could not read local upload ${prefix}/${file}:`, err);
+      const uploadsRoot = path.join(process.cwd(), "uploads");
+      const EXCLUDED_TOP_DIRS = new Set(["backups"]);
+      const collectDir = (dir: string, prefix: string) => {
+        if (!fs.existsSync(dir)) return;
+        for (const entry of fs.readdirSync(dir)) {
+          try {
+            const fullPath = path.join(dir, entry);
+            const relPath = prefix ? `${prefix}/${entry}` : entry;
+            const stat = fs.statSync(fullPath);
+            if (stat.isDirectory()) {
+              if (!prefix && EXCLUDED_TOP_DIRS.has(entry)) continue;
+              collectDir(fullPath, relPath);
+            } else if (stat.isFile()) {
+              localUploads.set(relPath, {
+                buffer: fs.readFileSync(fullPath),
+                contentType: getContentType(entry),
+              });
             }
+          } catch (err) {
+            console.warn(`Could not read local upload ${prefix}/${entry}:`, err);
+            failedFiles.push(`local-uploads/${prefix ? `${prefix}/` : ""}${entry}`);
           }
         }
+      };
+      collectDir(uploadsRoot, "");
+
+      if (failedFiles.length > 0) {
+        throw new Error(
+          `فشل النسخ الاحتياطي: تعذر قراءة ${failedFiles.length} ملف من الصور، لضمان اكتمال النسخة لن يتم إنشاؤها. الملفات: ${failedFiles.slice(0, 10).join(", ")}${failedFiles.length > 10 ? ` و${failedFiles.length - 10} أخرى` : ""}`
+        );
       }
-      console.log(`[Backup] Collected ${localUploads.size} local upload files (items + payments)`);
+      const localUploadsByFolder: Record<string, number> = {};
+      for (const key of Array.from(localUploads.keys())) {
+        const folder = key.includes("/") ? key.split("/")[0] : "(root)";
+        localUploadsByFolder[folder] = (localUploadsByFolder[folder] || 0) + 1;
+      }
+      console.log(`[Backup] Collected ${localUploads.size} local upload files:`, JSON.stringify(localUploadsByFolder));
 
       await updateJobProgress(job.id, 60);
 
@@ -419,6 +438,7 @@ export async function startBackup(userId: string): Promise<BackupJob> {
           totalSize:
             Array.from(mediaBuffers.values()).reduce((sum, m) => sum + m.buffer.length, 0) +
             Array.from(localUploads.values()).reduce((sum, m) => sum + m.buffer.length, 0),
+          byFolder: localUploadsByFolder,
         },
         files: [
           "database.sql",

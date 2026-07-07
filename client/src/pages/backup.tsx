@@ -462,6 +462,7 @@ export default function BackupPage() {
                       <TableHead className="text-right">ID</TableHead>
                       <TableHead className="text-right">التاريخ</TableHead>
                       <TableHead className="text-right">الحجم</TableHead>
+                      <TableHead className="text-right">الصور</TableHead>
                       <TableHead className="text-right">الحالة</TableHead>
                       <TableHead className="text-right">الإجراءات</TableHead>
                     </TableRow>
@@ -472,6 +473,12 @@ export default function BackupPage() {
                         <TableCell className="font-medium">#{job.id}</TableCell>
                         <TableCell>{formatDate(job.createdAt)}</TableCell>
                         <TableCell>{formatFileSize(job.fileSize)}</TableCell>
+                        <TableCell data-testid={`text-media-count-${job.id}`}>
+                          {(() => {
+                            const count = (job.manifest as { mediaFiles?: { count?: number } } | null)?.mediaFiles?.count;
+                            return typeof count === "number" ? `${count} صورة` : "—";
+                          })()}
+                        </TableCell>
                         <TableCell>{getStatusBadge(job.status)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2 flex-wrap">

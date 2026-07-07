@@ -7,10 +7,13 @@ import path from "path";
 const app = express();
 const httpServer = createServer(app);
 
-// Serve uploaded files
-app.use("/uploads/items", express.static(path.join(process.cwd(), "uploads/items")));
-app.use("/uploads/payments", express.static(path.join(process.cwd(), "uploads/payments")));
-app.use("/uploads/invoices", express.static(path.join(process.cwd(), "uploads/invoices")));
+// Serve all uploaded files (any subfolder under uploads/), except backup archives
+app.use("/uploads", (req, res, next) => {
+  if (req.path === "/backups" || req.path.startsWith("/backups/")) {
+    return res.status(404).json({ message: "غير موجود" });
+  }
+  next();
+}, express.static(path.join(process.cwd(), "uploads")));
 
 declare module "http" {
   interface IncomingMessage {
