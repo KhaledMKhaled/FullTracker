@@ -1331,6 +1331,15 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/shipments/:id/customs", isAuthenticated, async (req, res) => {
+    try {
+      const details = await routeStorage.getCustomsDetails(parseInt(req.params.id));
+      res.json(details || null);
+    } catch (error) {
+      res.status(500).json({ message: "Error fetching customs details" });
+    }
+  });
+
   // Invoice Summary - breakdown by currency
   app.get("/api/shipments/:id/invoice-summary", isAuthenticated, async (req, res) => {
     try {

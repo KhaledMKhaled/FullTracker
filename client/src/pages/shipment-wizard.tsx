@@ -23,8 +23,7 @@ import {
   AlertTriangle,
   FileDown,
 } from "lucide-react";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
+import { ShipmentPdfReport, exportShipmentReportPdf, type ShipmentReportData } from "@/components/shipment-pdf-report";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,6 +124,11 @@ export default function ShipmentWizard() {
 
   const { data: existingShipping } = useQuery<ShipmentShippingDetails>({
     queryKey: ["/api/shipments", id, "shipping"],
+    enabled: !isNew,
+  });
+
+  const { data: existingCustoms } = useQuery<{ customsInvoiceDate: string | null } | null>({
+    queryKey: ["/api/shipments", id, "customs"],
     enabled: !isNew,
   });
 
@@ -676,7 +680,10 @@ export default function ShipmentWizard() {
 
           {currentStep === 5 && (
             <Step5Summary
+              shipmentId={id}
               shipmentData={shipmentData}
+              shippingData={shippingData}
+              customsInvoiceDate={existingCustoms?.customsInvoiceDate || null}
               shippingCompanyName={
                 shippingCompanies?.find(
                   (company) => company.id === shipmentData.shippingCompanyId,
@@ -2003,8 +2010,11 @@ function Step4MissingPieces({
 
 // Step 5: Summary
 function Step5Summary({
+  shipmentId,
   shipmentData,
   shippingCompanyName,
+  shippingData,
+  customsInvoiceDate,
   items,
   totalPurchaseCostRmb,
   purchaseCostEgp,
@@ -2020,8 +2030,18 @@ function Step5Summary({
   finalTotalCostEgp,
   purchaseRate,
 }: {
+  shipmentId?: string;
   shipmentData: { shipmentCode: string; shipmentName: string; purchaseDate: string; status: string };
   shippingCompanyName?: string;
+  shippingData: {
+    commissionRatePercent: string;
+    shippingAreaSqm: string;
+    shippingCostPerSqmUsdOriginal: string;
+    shippingDate: string;
+    rmbToEgpRate: string;
+    usdToRmbRate: string;
+  };
+  customsInvoiceDate?: string | null;
   items: Partial<ShipmentItem>[];
   totalPurchaseCostRmb: number;
   purchaseCostEgp: number;
@@ -2039,6 +2059,13 @@ function Step5Summary({
 }) {
   const [isExporting, setIsExporting] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  const reportRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+
+  const { data: invoiceSummary } = useQuery<{ totalPaidEgp: string }>({
+    queryKey: ["/api/shipments", shipmentId, "invoice-summary"],
+    enabled: !!shipmentId && shipmentId !== "new",
+  });
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("ar-EG", {
@@ -2049,50 +2076,98 @@ function Step5Summary({
   const totalCartons = items.reduce((sum, item) => sum + (item.cartonsCtn || 0), 0);
   const totalPieces = items.reduce((sum, item) => sum + (item.totalPiecesCou || 0), 0);
 
-  const exportToPDF = useCallback(async () => {
-    if (!contentRef.current) return;
-    
-    setIsExporting(true);
-    try {
-      const element = contentRef.current;
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      });
+  const reportData: ShipmentReportData = {
+    shipmentCode: shipmentData.shipmentCode,
+    shipmentName: shipmentData.shipmentName,
+    purchaseDate: shipmentData.purchaseDate,
+    status: shipmentData.status,
+    shippingCompanyName: shippingCompanyName || "",
+    customsInvoiceDate,
+    purchaseRate,
+    items,
+    shippingDate: shippingData.shippingDate,
+    usdToRmbRate: parseFloat(shippingData.usdToRmbRate) || 0,
+    shippingCostPerSqmUsd: parseFloat(shippingData.shippingCostPerSqmUsdOriginal) || 0,
+    shippingAreaSqm: parseFloat(shippingData.shippingAreaSqm) || 0,
+    shippingRmbToEgp: parseFloat(shippingData.rmbToEgpRate) || 0,
+    commissionRatePercent: parseFloat(shippingData.commissionRatePercent) || 0,
+    commissionRmb,
+    commissionEgp,
+    shippingCostRmb,
+    shippingCostEgp,
+    totalPurchaseCostRmb,
+    purchaseCostEgp,
+    partialDiscountRmb,
+    partialDiscountEgp,
+    discountedPurchaseCostEgp,
+    totalCustomsCostEgp,
+    totalTakhreegCostEgp,
+    finalTotalCostEgp,
+    paidEgp: invoiceSummary ? parseFloat(invoiceSummary.totalPaidEgp) : null,
+  };
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      
-      // Add image to first page
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      
-      // Add additional pages if content is too long
-      let heightLeft = pdfHeight - pageHeight;
-      let yOffset = -pageHeight;
+  // Mount the off-screen report only while exporting, then capture it
+  useEffect(() => {
+    if (!isExporting) return;
+    let cancelled = false;
 
-      while (heightLeft > 0) {
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, yOffset, pdfWidth, pdfHeight);
-        heightLeft -= pageHeight;
-        yOffset -= pageHeight;
+    const run = async () => {
+      try {
+        const container = reportRef.current;
+        if (!container) throw new Error("Report not mounted");
+
+        // Wait for all report images to finish loading before capture
+        const imgs = Array.from(container.querySelectorAll("img"));
+        await Promise.all(
+          imgs.map((img) =>
+            img.complete
+              ? Promise.resolve()
+              : new Promise<void>((resolve) => {
+                  img.onload = () => resolve();
+                  img.onerror = () => resolve();
+                })
+          )
+        );
+
+        if (cancelled) return;
+        const fileName = `shipment-${shipmentData.shipmentCode}-${new Date().toISOString().split("T")[0]}.pdf`;
+        await exportShipmentReportPdf(container, fileName);
+      } catch (error) {
+        console.error("Error exporting PDF:", error);
+        if (!cancelled) {
+          toast({
+            title: "فشل تصدير PDF",
+            description: "حدث خطأ أثناء إنشاء الملف. حاول مرة أخرى.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        if (!cancelled) setIsExporting(false);
       }
+    };
 
-      const fileName = `shipment-${shipmentData.shipmentCode}-${new Date().toISOString().split("T")[0]}.pdf`;
-      pdf.save(fileName);
-    } catch (error) {
-      console.error("Error exporting PDF:", error);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [shipmentData.shipmentCode]);
+    // Give React a frame to mount the report before capturing
+    const t = window.setTimeout(run, 50);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExporting]);
+
+  const exportToPDF = useCallback(() => {
+    setIsExporting(true);
+  }, []);
 
   return (
     <div className="space-y-6">
+      {/* Off-screen PDF report template (mounted only during export) */}
+      {isExporting && (
+        <div style={{ position: "fixed", top: 0, left: -10000, zIndex: -1, pointerEvents: "none" }} aria-hidden="true">
+          <ShipmentPdfReport ref={reportRef} data={reportData} />
+        </div>
+      )}
+
       {/* Export Button */}
       <div className="flex justify-end">
         <Button
