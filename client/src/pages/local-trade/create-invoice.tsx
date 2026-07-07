@@ -46,7 +46,6 @@ interface InvoiceLineItem {
   imageFile?: File;
   imagePreview?: string;
   imageUrl?: string;
-  imageObjectPath?: string;
   isUploadingImage?: boolean;
   imageUploadError?: string;
   productTypeId: number | null;
@@ -225,57 +224,27 @@ export default function CreateInvoicePage() {
       });
 
       try {
-        // Step 1: Request presigned URL
-        const requestRes = await fetch(
-          "/api/upload/invoice-line-image/request-url",
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: file.name,
-              size: file.size,
-              contentType: file.type,
-            }),
-          }
-        );
+        const formData = new FormData();
+        formData.append("image", file);
 
-        if (!requestRes.ok) {
-          throw new Error("Failed to get upload URL");
-        }
-
-        const { uploadURL, objectPath } = await requestRes.json();
-
-        // Step 2: Upload directly to Object Storage using the presigned URL
-        const uploadRes = await fetch(uploadURL, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": file.type },
+        const uploadRes = await fetch("/api/upload/invoice-line-image/direct", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
         });
 
         if (!uploadRes.ok) {
-          throw new Error("Failed to upload image to storage");
+          let message = "فشل رفع الصورة";
+          try {
+            const errBody = await uploadRes.json();
+            if (errBody?.message) message = errBody.message;
+          } catch {}
+          throw new Error(message);
         }
 
-        // Step 3: Finalize the upload (set ACL policy)
-        const finalizeRes = await fetch(
-          "/api/upload/invoice-line-image/finalize",
-          {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ objectPath }),
-          }
-        );
-
-        if (!finalizeRes.ok) {
-          throw new Error("Failed to finalize upload");
-        }
-
-        const { imageUrl } = await finalizeRes.json();
+        const { imageUrl } = await uploadRes.json();
         updateLine(id, {
           imageUrl,
-          imageObjectPath: objectPath,
           isUploadingImage: false,
         });
       } catch (error) {

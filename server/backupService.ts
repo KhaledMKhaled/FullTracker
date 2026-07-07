@@ -388,6 +388,7 @@ export async function startBackup(userId: string): Promise<BackupJob> {
       const localUploadDirs = [
         { dir: path.join(process.cwd(), "uploads", "items"), prefix: "items" },
         { dir: path.join(process.cwd(), "uploads", "payments"), prefix: "payments" },
+        { dir: path.join(process.cwd(), "uploads", "invoices"), prefix: "invoices" },
       ];
       for (const { dir, prefix } of localUploadDirs) {
         if (fs.existsSync(dir)) {

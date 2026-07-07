@@ -237,6 +237,33 @@ const uploadPaymentAttachment = multer({
   },
 });
 
+const invoiceLineImageStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => {
+    const uploadDir = "uploads/invoices";
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    cb(null, uploadDir);
+  },
+  filename: (_req, file, cb) => {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname);
+    cb(null, `invoice-line-${uniqueSuffix}${ext}`);
+  },
+});
+
+const uploadInvoiceLineImage = multer({
+  storage: invoiceLineImageStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith("image/")) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image files are allowed"));
+    }
+  },
+});
+
 const handlePaymentAttachmentUpload: RequestHandler = (req, res, next) => {
   uploadPaymentAttachment.single("attachment")(req, res, (err) => {
     if (!err) {
@@ -759,6 +786,28 @@ export async function registerRoutes(
       console.error("[Upload] Error finalizing payment attachment:", error?.message || error);
       res.status(500).json({ message: "خطأ في حفظ المرفق" });
     }
+  });
+
+  // Direct local upload for invoice line images (primary method - no Object Storage needed)
+  app.post("/api/upload/invoice-line-image/direct", isAuthenticated, (req, res) => {
+    uploadInvoiceLineImage.single("image")(req, res, (err) => {
+      if (err) {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ message: "يجب ألا يزيد حجم الصورة عن 5MB" });
+        }
+        if (err.message === "Only image files are allowed") {
+          return res.status(400).json({ message: "يسمح فقط بملفات الصور" });
+        }
+        console.error("[Upload] Error saving invoice line image:", err);
+        return res.status(400).json({ message: "خطأ في رفع الصورة" });
+      }
+      if (!req.file) {
+        return res.status(400).json({ message: "لم يتم رفع صورة" });
+      }
+      const imageUrl = `/uploads/invoices/${req.file.filename}`;
+      console.log("[Upload] Invoice Line Image saved locally:", imageUrl);
+      res.json({ imageUrl });
+    });
   });
 
   // Request presigned URL for invoice line image upload (Object Storage)
