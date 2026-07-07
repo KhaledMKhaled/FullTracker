@@ -2547,13 +2547,17 @@ function LedgerTab({
       return;
     }
 
-    const { jsPDF } = await import("@/lib/jspdf-stub");
-    
+    try {
+    const { jsPDF } = await import("jspdf");
+    const { default: autoTable } = await import("jspdf-autotable");
+    const { registerArabicFont } = await import("@/lib/pdf-arabic");
+
     const doc = new jsPDF({
       orientation: "portrait",
       unit: "mm",
       format: "a4",
     });
+    await registerArabicFont(doc);
 
     doc.setFontSize(20);
     doc.text(`كشف حساب - ${partyData.name}`, doc.internal.pageSize.getWidth() - 15, 20, { align: "right" });
@@ -2595,17 +2599,25 @@ function LedgerTab({
       ];
     });
     
-    (doc as any).autoTable({
+    autoTable(doc, {
       head: [["الرصيد", "دائن (علينا)", "مدين (لنا)", "البيان", "النوع", "التاريخ"]],
       body: tableData,
       startY: yPos + 10,
       theme: "grid",
+      styles: {
+        font: "Amiri",
+        fontStyle: "normal",
+      },
       headStyles: {
         fillColor: [66, 66, 66],
         halign: "right",
+        font: "Amiri",
+        fontStyle: "normal",
       },
       bodyStyles: {
         halign: "right",
+        font: "Amiri",
+        fontStyle: "normal",
       },
       columnStyles: {
         0: { halign: "center" },
@@ -2624,6 +2636,14 @@ function LedgerTab({
     );
     
     doc.save(`كشف-حساب-${partyData.name}-${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast({
+        title: "فشل تصدير PDF",
+        description: "حدث خطأ أثناء إنشاء الملف، حاول مرة أخرى",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleExportCSV = () => {
