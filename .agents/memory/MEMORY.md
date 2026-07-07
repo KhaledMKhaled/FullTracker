@@ -1,0 +1,1 @@
+- [Media on local disk](media-local-disk.md) — Object Storage unconfigured; all images live under uploads/, legacy /objects/ URLs were migrated; Arabic filenames need RFC 5987 headers.
