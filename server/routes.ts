@@ -711,62 +711,50 @@ export async function registerRoutes(
     }
   });
 
-  // Request presigned URL for payment attachment upload (Object Storage)
+  // Direct local upload for payment attachments (primary method - no Object Storage needed)
+  app.post("/api/upload/payment-attachment/direct", isAuthenticated, uploadPaymentAttachment.single("attachment"), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "لم يتم رفع صورة" });
+      }
+      const attachmentUrl = `/uploads/payments/${req.file.filename}`;
+      console.log("[Upload] Payment Attachment saved locally:", attachmentUrl);
+      res.json({
+        attachmentUrl,
+        attachmentOriginalName: req.file.originalname,
+        attachmentMimeType: req.file.mimetype,
+        attachmentSize: req.file.size,
+      });
+    } catch (error) {
+      console.error("[Upload] Error saving payment attachment:", error);
+      res.status(500).json({ message: "خطأ في حفظ المرفق" });
+    }
+  });
+
+  // Request presigned URL for payment attachment upload (Object Storage - kept for compatibility)
   app.post("/api/upload/payment-attachment/request-url", isAuthenticated, async (req, res) => {
     try {
       const { name, size, contentType } = req.body;
-      console.log("[Upload] Payment Attachment Request URL - File:", name, "Size:", size, "Type:", contentType);
-      
-      if (!name) {
-        return res.status(400).json({ message: "اسم الملف مطلوب" });
-      }
-
-      // Validate file type
-      if (!contentType?.startsWith("image/")) {
-        return res.status(400).json({ message: "يسمح فقط بملفات الصور" });
-      }
-
-      // Validate file size (2MB limit)
-      if (size && size > MAX_PAYMENT_ATTACHMENT_SIZE) {
-        return res.status(400).json({ message: "يجب ألا يزيد حجم الصورة عن 2MB" });
-      }
+      if (!name) return res.status(400).json({ message: "اسم الملف مطلوب" });
+      if (!contentType?.startsWith("image/")) return res.status(400).json({ message: "يسمح فقط بملفات الصور" });
+      if (size && size > MAX_PAYMENT_ATTACHMENT_SIZE) return res.status(400).json({ message: "يجب ألا يزيد حجم الصورة عن 2MB" });
 
       const uploadURL = await objectStorageService.getObjectEntityUploadURL();
       const objectPath = objectStorageService.normalizeObjectEntityPath(uploadURL);
-      console.log("[Upload] Payment Attachment Generated - objectPath:", objectPath);
-
-      res.json({
-        uploadURL,
-        objectPath,
-        metadata: { name, size, contentType },
-      });
+      res.json({ uploadURL, objectPath, metadata: { name, size, contentType } });
     } catch (error) {
       console.error("[Upload] Error generating payment attachment URL:", error);
       res.status(500).json({ message: "خطأ في إنشاء رابط الرفع" });
     }
   });
 
-  // Finalize payment attachment upload - same approach as item images
+  // Finalize payment attachment upload (Object Storage - kept for compatibility)
   app.post("/api/upload/payment-attachment/finalize", isAuthenticated, async (req, res) => {
     try {
       const { objectPath, originalName } = req.body;
-      console.log("[Upload] Payment Attachment Finalize - objectPath:", objectPath);
-      
-      if (!objectPath) {
-        return res.status(400).json({ message: "مسار الملف مطلوب" });
-      }
-
-      // Set public visibility for payment attachments (same as item images)
-      const normalizedPath = await objectStorageService.trySetObjectEntityAclPolicy(
-        objectPath,
-        { owner: "system", visibility: "public" }
-      );
-      console.log("[Upload] Payment Attachment Finalized - normalizedPath:", normalizedPath);
-
-      res.json({ 
-        attachmentUrl: normalizedPath,
-        attachmentOriginalName: originalName || null
-      });
+      if (!objectPath) return res.status(400).json({ message: "مسار الملف مطلوب" });
+      const normalizedPath = await objectStorageService.trySetObjectEntityAclPolicy(objectPath, { owner: "system", visibility: "public" });
+      res.json({ attachmentUrl: normalizedPath, attachmentOriginalName: originalName || null });
     } catch (error: any) {
       console.error("[Upload] Error finalizing payment attachment:", error?.message || error);
       res.status(500).json({ message: "خطأ في حفظ المرفق" });

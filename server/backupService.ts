@@ -371,19 +371,52 @@ export async function startBackup(userId: string): Promise<BackupJob> {
           console.warn(`Could not download ${obj.path}:`, err);
         }
         downloadedCount++;
-        const downloadProgress = 35 + Math.floor((downloadedCount / Math.max(totalMedia, 1)) * 30);
+        const downloadProgress = 35 + Math.floor((downloadedCount / Math.max(totalMedia, 1)) * 20);
         await updateJobProgress(job.id, downloadProgress);
       }
+
+      // Collect local upload files (items + payments)
+      const localUploads: Map<string, { buffer: Buffer; contentType: string }> = new Map();
+      const localUploadDirs = [
+        { dir: path.join(process.cwd(), "uploads", "items"), prefix: "items" },
+        { dir: path.join(process.cwd(), "uploads", "payments"), prefix: "payments" },
+      ];
+      for (const { dir, prefix } of localUploadDirs) {
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          for (const file of files) {
+            try {
+              const filePath = path.join(dir, file);
+              if (fs.statSync(filePath).isFile()) {
+                const buffer = fs.readFileSync(filePath);
+                localUploads.set(`${prefix}/${file}`, { buffer, contentType: getContentType(file) });
+              }
+            } catch (err) {
+              console.warn(`Could not read local upload ${prefix}/${file}:`, err);
+            }
+          }
+        }
+      }
+      console.log(`[Backup] Collected ${localUploads.size} local upload files (items + payments)`);
+
+      await updateJobProgress(job.id, 60);
 
       const manifest: BackupManifest = {
         version: "1.0.0",
         createdAt: new Date().toISOString(),
         databaseStats,
         mediaFiles: {
-          count: mediaBuffers.size,
-          totalSize: Array.from(mediaBuffers.values()).reduce((sum, m) => sum + m.buffer.length, 0),
+          count: mediaBuffers.size + localUploads.size,
+          totalSize:
+            Array.from(mediaBuffers.values()).reduce((sum, m) => sum + m.buffer.length, 0) +
+            Array.from(localUploads.values()).reduce((sum, m) => sum + m.buffer.length, 0),
         },
-        files: ["database.sql", "manifest.json", ...Array.from(mediaBuffers.keys()).map((p) => `media/${p}`)],
+        files: [
+          "database.sql",
+          "manifest.json",
+          ...Array.from(mediaBuffers.keys()).map((p) => `media/${p}`),
+          ...Array.from(localUploads.keys()).map((p) => `local-uploads/${p}`),
+        ],
       };
 
       await updateJobProgress(job.id, 70);
@@ -403,8 +436,12 @@ export async function startBackup(userId: string): Promise<BackupJob> {
         archive.append(sqlDump, { name: "database.sql" });
         archive.append(JSON.stringify(manifest, null, 2), { name: "manifest.json" });
 
-        Array.from(mediaBuffers.entries()).forEach(([path, { buffer }]) => {
-          archive.append(buffer, { name: `media/${path}` });
+        Array.from(mediaBuffers.entries()).forEach(([p, { buffer }]) => {
+          archive.append(buffer, { name: `media/${p}` });
+        });
+
+        Array.from(localUploads.entries()).forEach(([p, { buffer }]) => {
+          archive.append(buffer, { name: `local-uploads/${p}` });
         });
 
         archive.finalize();
@@ -477,7 +514,8 @@ export async function startRestore(userId: string, backupPath: string): Promise<
       await updateJobProgress(job.id, 50);
 
       const mediaEntries = zipEntries.filter((e) => e.entryName.startsWith("media/") && !e.isDirectory);
-      const totalMedia = mediaEntries.length;
+      const localUploadEntries = zipEntries.filter((e) => e.entryName.startsWith("local-uploads/") && !e.isDirectory);
+      const totalMedia = mediaEntries.length + localUploadEntries.length;
       let restoredCount = 0;
 
       let bucketName: string | null = null;
@@ -502,6 +540,23 @@ export async function startRestore(userId: string, backupPath: string): Promise<
             if (!fs.existsSync(localMediaDir)) fs.mkdirSync(localMediaDir, { recursive: true });
             fs.writeFileSync(localMediaPath, buffer);
           }
+        } catch (err) {
+          console.warn(`Could not restore ${entry.entryName}:`, err);
+        }
+        restoredCount++;
+        const restoreProgress = 50 + Math.floor((restoredCount / Math.max(totalMedia, 1)) * 45);
+        await updateJobProgress(job.id, restoreProgress);
+      }
+
+      // Restore local upload files (items + payments) directly to local disk
+      for (const entry of localUploadEntries) {
+        try {
+          const relativePath = entry.entryName.replace(/^local-uploads\//, "");
+          const localPath = path.join(process.cwd(), "uploads", relativePath);
+          const localDir = path.dirname(localPath);
+          if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+          fs.writeFileSync(localPath, entry.getData());
+          console.log(`[Restore] Restored local file: uploads/${relativePath}`);
         } catch (err) {
           console.warn(`Could not restore ${entry.entryName}:`, err);
         }

@@ -103,57 +103,27 @@ export const buildPaymentFormData = (input: PaymentPayloadInput): FormData => {
   return payload;
 };
 
-// Upload attachment to Object Storage and return the URL and metadata
-// Uses the same approach as item images in shipment-wizard.tsx
+// Upload attachment directly to local server storage (persistent, no Object Storage needed)
 export async function uploadPaymentAttachment(file: File): Promise<{ attachmentUrl: string; attachmentOriginalName: string; attachmentMimeType: string; attachmentSize: number }> {
-  // Step 1: Request presigned URL from backend
-  const urlResponse = await fetch("/api/upload/payment-attachment/request-url", {
+  const formData = new FormData();
+  formData.append("attachment", file);
+
+  const response = await fetch("/api/upload/payment-attachment/direct", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    body: formData,
     credentials: "include",
-    body: JSON.stringify({
-      name: file.name,
-      size: file.size,
-      contentType: file.type || "image/jpeg",
-    }),
   });
 
-  if (!urlResponse.ok) {
-    const error = await urlResponse.json().catch(() => ({}));
-    throw new Error(error.message || "فشل الحصول على رابط الرفع");
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.message || "فشل رفع المرفق");
   }
 
-  const { uploadURL, objectPath } = await urlResponse.json();
-
-  // Step 2: Upload file directly to Google Cloud Storage
-  const uploadResponse = await fetch(uploadURL, {
-    method: "PUT",
-    body: file,
-    headers: { "Content-Type": file.type || "image/jpeg" },
-  });
-
-  if (!uploadResponse.ok) {
-    throw new Error("فشل رفع المرفق");
-  }
-
-  // Step 3: Finalize upload (set ACL and get final path) - same as item images
-  const finalizeResponse = await fetch("/api/upload/payment-attachment/finalize", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify({ objectPath, originalName: file.name }),
-  });
-
-  if (!finalizeResponse.ok) {
-    const finalizeError = await finalizeResponse.json().catch(() => ({}));
-    throw new Error(finalizeError.message || "فشل حفظ المرفق");
-  }
-
-  const result = await finalizeResponse.json();
+  const result = await response.json();
   return {
     attachmentUrl: result.attachmentUrl,
     attachmentOriginalName: result.attachmentOriginalName || file.name,
-    attachmentMimeType: file.type || "image/jpeg",
-    attachmentSize: file.size,
+    attachmentMimeType: result.attachmentMimeType || file.type || "image/jpeg",
+    attachmentSize: result.attachmentSize || file.size,
   };
 }
