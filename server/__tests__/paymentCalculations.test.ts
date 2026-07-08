@@ -113,6 +113,131 @@ describe("calculatePaymentSnapshot", () => {
     assert.equal(snapshot.paidByCurrency.EGP?.convertedToEgp, 300);
   });
 
+  it("computes independent per-currency allowances (RMB vs EGP)", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      purchaseCostRmb: "1000",
+      shippingCostRmb: "200",
+      commissionCostRmb: "100",
+      customsCostEgp: "500",
+      takhreegCostEgp: "300",
+      purchaseCostEgp: "7000",
+      shippingCostEgp: "1400",
+      commissionCostEgp: "700",
+    } as Shipment;
+
+    const payments: ShipmentPayment[] = [
+      createPayment({
+        paymentCurrency: "RMB",
+        costComponent: "تكلفة البضاعة",
+        amountOriginal: "400",
+        exchangeRateToEgp: "7.00",
+        amountEgp: "2800",
+      }),
+      createPayment({
+        id: 2,
+        paymentCurrency: "EGP",
+        costComponent: "الجمرك",
+        amountOriginal: "200",
+        amountEgp: "200",
+      }),
+    ];
+
+    const snapshot = await calculatePaymentSnapshot({ shipment, payments });
+
+    assert.equal(snapshot.currencyAllowance.rmb.knownTotal, 1300);
+    assert.equal(snapshot.currencyAllowance.rmb.paid, 400);
+    assert.equal(snapshot.currencyAllowance.rmb.remaining, 900);
+    assert.equal(snapshot.currencyAllowance.egp.knownTotal, 800);
+    assert.equal(snapshot.currencyAllowance.egp.paid, 200);
+    assert.equal(snapshot.currencyAllowance.egp.remaining, 600);
+  });
+
+  it("counts EGP payments on RMB components against the RMB allowance via exchange rate", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      purchaseCostRmb: "1000",
+      partialDiscountRmb: "100",
+    } as Shipment;
+
+    const payments: ShipmentPayment[] = [
+      createPayment({
+        paymentCurrency: "EGP",
+        costComponent: "تكلفة البضاعة",
+        amountOriginal: "700",
+        exchangeRateToEgp: "7.00",
+        amountEgp: "700",
+      }),
+    ];
+
+    const snapshot = await calculatePaymentSnapshot({ shipment, payments });
+
+    assert.equal(snapshot.currencyAllowance.rmb.knownTotal, 900);
+    assert.equal(snapshot.currencyAllowance.rmb.paid, 100);
+    assert.equal(snapshot.currencyAllowance.rmb.remaining, 800);
+    assert.equal(snapshot.currencyAllowance.egp.knownTotal, 0);
+    assert.equal(snapshot.currencyAllowance.egp.remaining, 0);
+  });
+
+  it("builds per-currency allowances from recovered totals when shipment fields are empty", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      purchaseCostEgp: "0",
+      customsCostEgp: "0",
+      takhreegCostEgp: "0",
+    };
+
+    const items: ShipmentItem[] = [
+      {
+        id: 1,
+        shipmentId: shipment.id,
+        supplierId: null,
+        productId: null,
+        productType: null,
+        productName: "Widgets",
+        description: null,
+        countryOfOrigin: "CN",
+        imageUrl: null,
+        cartonsCtn: 10,
+        piecesPerCartonPcs: 0,
+        totalPiecesCou: 0,
+        purchasePricePerPiecePriRmb: "0",
+        totalPurchaseCostRmb: "100",
+        customsCostPerCartonEgp: "5",
+        totalCustomsCostEgp: "50",
+        takhreegCostPerCartonEgp: "3",
+        totalTakhreegCostEgp: "30",
+        createdAt: new Date("2024-01-01"),
+        updatedAt: new Date("2024-01-01"),
+      },
+    ];
+
+    const payments: ShipmentPayment[] = [
+      createPayment({
+        paymentCurrency: "EGP",
+        costComponent: "تكلفة البضاعة",
+        amountOriginal: "70",
+        exchangeRateToEgp: null,
+        amountEgp: "70",
+      }),
+    ];
+
+    const snapshot = await calculatePaymentSnapshot({
+      shipment,
+      payments,
+      loadRecoveryData: async () => ({
+        items,
+        rmbToEgpRate: 7,
+      }),
+    });
+
+    assert.equal(snapshot.currencyAllowance.rmb.knownTotal, 100);
+    assert.equal(snapshot.currencyAllowance.rmb.paid, 10);
+    assert.equal(snapshot.currencyAllowance.rmb.remaining, 90);
+    assert.equal(snapshot.currencyAllowance.egp.knownTotal, 80);
+    assert.equal(snapshot.currencyAllowance.egp.remaining, 80);
+  });
+
   it("recovers totals from items to align payment acceptance with invoice summary", async () => {
     const shipment: Shipment = {
       ...baseShipment,

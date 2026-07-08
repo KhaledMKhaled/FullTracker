@@ -1911,8 +1911,29 @@ export class DatabaseStorage implements IStorage {
         );
       }
 
-      // ONLY block if payment exceeds what's currently known/allowed
-      if (amountEgp > paymentSnapshot.remainingAllowed + 0.0001) {
+      // ONLY block if payment exceeds what's currently known/allowed for its own currency
+      // RMB components (goods/shipping/commission) are checked against the RMB total,
+      // EGP components (customs/takhreeg) against the EGP total — each independently.
+      const currencyLimit =
+        componentCurrency === "RMB"
+          ? paymentSnapshot.currencyAllowance.rmb
+          : paymentSnapshot.currencyAllowance.egp;
+
+      if (currencyLimit.knownTotal > 0) {
+        if (amountInComponentCurrency > currencyLimit.remaining + 0.0001) {
+          const currencyLabel = componentCurrency === "RMB" ? "يوان" : "جنيه";
+          throw new ApiError("PAYMENT_OVERPAY",
+            `لا يمكن دفع هذا المبلغ - الحد المسموح به هو ${currencyLimit.remaining.toFixed(2)} ${currencyLabel}`, 409, {
+            shipmentId: data.shipmentId,
+            currency: componentCurrency,
+            knownTotal: currencyLimit.knownTotal,
+            alreadyPaid: currencyLimit.paid,
+            remainingAllowed: currencyLimit.remaining,
+            attempted: amountInComponentCurrency,
+          });
+        }
+      } else if (amountEgp > paymentSnapshot.remainingAllowed + 0.0001) {
+        // Fallback: no per-currency breakdown known — use the combined EGP allowance
         throw new ApiError("PAYMENT_OVERPAY", 
           `لا يمكن دفع هذا المبلغ - الحد المسموح به هو ${paymentSnapshot.remainingAllowed.toFixed(2)} جنيه`, 409, {
           shipmentId: data.shipmentId,
@@ -2028,7 +2049,16 @@ export class DatabaseStorage implements IStorage {
           ...data,
           paymentDate,
           amountOriginal: roundAmount(amountOriginal, 2).toFixed(2),
-          exchangeRateToEgp: exchangeRateToEgp ? roundAmount(exchangeRateToEgp, 4).toFixed(4) : null,
+          exchangeRateToEgp: (() => {
+            // Persist the effective rate for EGP payments on RMB components so
+            // later per-currency calculations can convert them back to RMB.
+            const effectiveRate =
+              exchangeRateToEgp ||
+              (componentCurrency === "RMB" && data.paymentCurrency === "EGP"
+                ? validationRateToEgp
+                : null);
+            return effectiveRate ? roundAmount(effectiveRate, 4).toFixed(4) : null;
+          })(),
           amountEgp: roundAmount(amountEgp, 2).toFixed(2),
         })
         .returning();

@@ -1496,6 +1496,18 @@ export async function registerRoutes(
           remainingAllowedEgp: paymentAllowance.remainingAllowed.toFixed(2),
           source: paymentAllowance.recoveredFromItems ? "recovered" : "declared",
         },
+        currencyAllowance: {
+          rmb: {
+            knownTotal: paymentSnapshot.currencyAllowance.rmb.knownTotal.toFixed(2),
+            paid: paymentSnapshot.currencyAllowance.rmb.paid.toFixed(2),
+            remaining: paymentSnapshot.currencyAllowance.rmb.remaining.toFixed(2),
+          },
+          egp: {
+            knownTotal: paymentSnapshot.currencyAllowance.egp.knownTotal.toFixed(2),
+            paid: paymentSnapshot.currencyAllowance.egp.paid.toFixed(2),
+            remaining: paymentSnapshot.currencyAllowance.egp.remaining.toFixed(2),
+          },
+        },
         computedAt: new Date().toISOString(),
       });
     } catch (error) {

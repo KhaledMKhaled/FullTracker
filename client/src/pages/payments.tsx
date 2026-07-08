@@ -98,7 +98,12 @@ import type {
   ShippingCompany,
   Supplier,
 } from "@shared/schema";
-import { deriveAmountEgp, validateRemainingAllowance } from "./paymentValidation";
+import {
+  deriveAmountEgp,
+  deriveAmountInComponentCurrency,
+  getComponentCurrency,
+  validateRemainingAllowance,
+} from "./paymentValidation";
 import { cn } from "@/lib/utils";
 import {
   buildPaymentFormData,
@@ -234,6 +239,10 @@ interface InvoiceSummary {
     alreadyPaidEgp: string;
     remainingAllowedEgp: string;
     source: "declared" | "recovered";
+  };
+  currencyAllowance?: {
+    rmb: { knownTotal: string; paid: string; remaining: string };
+    egp: { knownTotal: string; paid: string; remaining: string };
   };
   computedAt: string;
 }
@@ -870,16 +879,42 @@ export default function Payments() {
       }
     }
 
-    const remainingAllowedValue =
-      latestInvoiceSummary?.paymentAllowance?.remainingAllowedEgp !== undefined
-        ? parseFloat(latestInvoiceSummary.paymentAllowance.remainingAllowedEgp)
-        : undefined;
+    const componentCurrency = getComponentCurrency(data.costComponent);
+    const currencyLimit =
+      componentCurrency === "RMB"
+        ? latestInvoiceSummary?.currencyAllowance?.rmb
+        : latestInvoiceSummary?.currencyAllowance?.egp;
+    const currencyKnownTotal = currencyLimit ? parseFloat(currencyLimit.knownTotal) : 0;
 
-    const validation = validateRemainingAllowance({
-      remainingAllowedEgp: Number.isFinite(remainingAllowedValue) ? remainingAllowedValue : undefined,
-      attemptedAmountEgp: amountEgpNumber,
-      formatter: (value) => formatCurrency(value),
-    });
+    let validation: { allowed: boolean; message?: string };
+
+    if (currencyLimit && Number.isFinite(currencyKnownTotal) && currencyKnownTotal > 0) {
+      const remainingCurrencyValue = parseFloat(currencyLimit.remaining);
+      const attemptedInComponentCurrency = deriveAmountInComponentCurrency({
+        componentCurrency,
+        paymentCurrency,
+        amountOriginal,
+        exchangeRate,
+      });
+
+      validation = validateRemainingAllowance({
+        remainingAllowed: Number.isFinite(remainingCurrencyValue) ? remainingCurrencyValue : undefined,
+        attemptedAmount: attemptedInComponentCurrency,
+        formatter: (value) => formatCurrency(value),
+        currencyLabel: componentCurrency === "RMB" ? "¥" : "ج.م",
+      });
+    } else {
+      const remainingAllowedValue =
+        latestInvoiceSummary?.paymentAllowance?.remainingAllowedEgp !== undefined
+          ? parseFloat(latestInvoiceSummary.paymentAllowance.remainingAllowedEgp)
+          : undefined;
+
+      validation = validateRemainingAllowance({
+        remainingAllowed: Number.isFinite(remainingAllowedValue) ? remainingAllowedValue : undefined,
+        attemptedAmount: amountEgpNumber,
+        formatter: (value) => formatCurrency(value),
+      });
+    }
 
     if (!validation.allowed) {
       const message = validation.message || "لا يمكن دفع هذا المبلغ في الوقت الحالي";
@@ -2771,12 +2806,29 @@ export default function Payments() {
                       {formatCurrency(invoiceSummary.paymentAllowance.alreadyPaidEgp)} ج.م
                     </span>
                   </div>
-                  <div className="flex items-center justify-between text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                    <span>المتبقي المسموح سداده الآن</span>
-                    <span>
-                      {formatCurrency(invoiceSummary.paymentAllowance.remainingAllowedEgp)} ج.م
-                    </span>
-                  </div>
+                  {invoiceSummary.currencyAllowance ? (
+                    <>
+                      <div className="flex items-center justify-between text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                        <span>المتبقي المسموح (يوان ¥)</span>
+                        <span>
+                          {formatCurrency(invoiceSummary.currencyAllowance.rmb.remaining)} ¥
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                        <span>المتبقي المسموح (جنيه ج.م)</span>
+                        <span>
+                          {formatCurrency(invoiceSummary.currencyAllowance.egp.remaining)} ج.م
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center justify-between text-sm font-semibold text-emerald-700 dark:text-emerald-400">
+                      <span>المتبقي المسموح سداده الآن</span>
+                      <span>
+                        {formatCurrency(invoiceSummary.paymentAllowance.remainingAllowedEgp)} ج.م
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

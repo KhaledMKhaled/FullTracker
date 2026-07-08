@@ -6,10 +6,20 @@ export type PaidByCurrency = Record<
   { original: number; convertedToEgp: number }
 >;
 
+export type CurrencyAllowance = {
+  knownTotal: number;
+  paid: number;
+  remaining: number;
+};
+
 export type PaymentSnapshot = {
   knownTotalCost: number;
   totalPaidEgp: number;
   remainingAllowed: number;
+  currencyAllowance: {
+    rmb: CurrencyAllowance;
+    egp: CurrencyAllowance;
+  };
   paidByCurrency: PaidByCurrency;
   recoveredTotals?: {
     purchaseCostRmb: number;
@@ -19,6 +29,8 @@ export type PaymentSnapshot = {
     finalTotalCostEgp: number;
   };
 };
+
+export const RMB_COST_COMPONENTS = ["تكلفة البضاعة", "الشحن", "العمولة"] as const;
 
 export const parseAmountOrZero = (value: unknown): number => {
   if (value === null || value === undefined) return 0;
@@ -105,12 +117,15 @@ export async function calculatePaymentSnapshot(options: {
 }): Promise<PaymentSnapshot> {
   let knownTotalCost = computeKnownTotalCost(options.shipment);
   let recoveredTotals: PaymentSnapshot["recoveredTotals"];
+  let recoveryRate: number | undefined;
 
   if (knownTotalCost === 0 && options.loadRecoveryData) {
     const { items, rmbToEgpRate } = await options.loadRecoveryData();
     recoveredTotals = computeRecoveredTotals(items, rmbToEgpRate);
     if (recoveredTotals) {
       knownTotalCost = recoveredTotals.finalTotalCostEgp;
+      recoveryRate =
+        rmbToEgpRate && rmbToEgpRate > 0 ? rmbToEgpRate : 7.15;
     }
   }
 
@@ -141,6 +156,75 @@ export async function calculatePaymentSnapshot(options: {
     Math.max(0, knownTotalCost - totalPaidEgp),
   );
 
+  // Per-currency allowances: RMB components (goods, shipping, commission) vs EGP components (customs, takhreeg)
+  const goodsTotalRmbGross = parseAmountOrZero(options.shipment.purchaseCostRmb);
+  const partialDiscountRmb = parseAmountOrZero(
+    options.shipment.partialDiscountRmb,
+  );
+  const goodsTotalRmb = Math.max(0, goodsTotalRmbGross - partialDiscountRmb);
+  let rmbKnownTotal = roundAmount(
+    goodsTotalRmb +
+      parseAmountOrZero(options.shipment.shippingCostRmb) +
+      parseAmountOrZero(options.shipment.commissionCostRmb),
+  );
+  let egpKnownTotal = roundAmount(
+    parseAmountOrZero(options.shipment.customsCostEgp) +
+      parseAmountOrZero(options.shipment.takhreegCostEgp),
+  );
+
+  // If shipment fields were empty but totals were recovered from items,
+  // build the per-currency limits from the recovered totals too.
+  if (recoveredTotals) {
+    if (rmbKnownTotal === 0) {
+      rmbKnownTotal = roundAmount(recoveredTotals.purchaseCostRmb);
+    }
+    if (egpKnownTotal === 0) {
+      egpKnownTotal = roundAmount(
+        recoveredTotals.customsCostEgp + recoveredTotals.takhreegCostEgp,
+      );
+    }
+  }
+
+  const shipmentRate =
+    parseAmountOrZero(options.shipment.purchaseRmbToEgpRate) ||
+    (recoveryRate ?? 0);
+  let paidRmbComponents = 0;
+  let paidEgpComponents = 0;
+
+  for (const payment of options.payments) {
+    const isRmbComponent = RMB_COST_COMPONENTS.includes(
+      payment.costComponent as (typeof RMB_COST_COMPONENTS)[number],
+    );
+
+    if (isRmbComponent) {
+      if (payment.paymentCurrency === "RMB") {
+        paidRmbComponents += parseAmountOrZero(payment.amountOriginal);
+      } else {
+        const rate =
+          parseAmountOrZero(payment.exchangeRateToEgp) ||
+          (shipmentRate > 0 ? shipmentRate : 0);
+        if (rate > 0) {
+          paidRmbComponents += parseAmountOrZero(payment.amountEgp) / rate;
+        }
+      }
+    } else {
+      paidEgpComponents += parseAmountOrZero(payment.amountEgp);
+    }
+  }
+
+  const currencyAllowance = {
+    rmb: {
+      knownTotal: rmbKnownTotal,
+      paid: roundAmount(paidRmbComponents),
+      remaining: roundAmount(Math.max(0, rmbKnownTotal - paidRmbComponents)),
+    },
+    egp: {
+      knownTotal: egpKnownTotal,
+      paid: roundAmount(paidEgpComponents),
+      remaining: roundAmount(Math.max(0, egpKnownTotal - paidEgpComponents)),
+    },
+  };
+
   const roundedPaidByCurrency = Object.fromEntries(
     Object.entries(paidByCurrency).map(([currency, values]) => [
       currency,
@@ -155,6 +239,7 @@ export async function calculatePaymentSnapshot(options: {
     knownTotalCost,
     totalPaidEgp,
     remainingAllowed,
+    currencyAllowance,
     paidByCurrency: roundedPaidByCurrency,
     recoveredTotals,
   };

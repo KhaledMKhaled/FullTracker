@@ -22,31 +22,72 @@ export function deriveAmountEgp({
   return amountOriginalNumber * exchangeRateNumber;
 }
 
+export const RMB_COST_COMPONENTS = ["تكلفة البضاعة", "الشحن", "العمولة"] as const;
+
+export function getComponentCurrency(costComponent: string): "RMB" | "EGP" {
+  return (RMB_COST_COMPONENTS as readonly string[]).includes(costComponent)
+    ? "RMB"
+    : "EGP";
+}
+
+export function deriveAmountInComponentCurrency({
+  componentCurrency,
+  paymentCurrency,
+  amountOriginal,
+  exchangeRate,
+}: {
+  componentCurrency: "RMB" | "EGP";
+  paymentCurrency: "EGP" | "RMB" | string;
+  amountOriginal: string;
+  exchangeRate?: string | null;
+}): number {
+  const amountEgp = deriveAmountEgp({ paymentCurrency, amountOriginal, exchangeRate });
+
+  if (componentCurrency === "EGP") {
+    return amountEgp;
+  }
+
+  if (paymentCurrency === "RMB") {
+    const amountOriginalNumber = parseFloat(amountOriginal || "0");
+    return Number.isFinite(amountOriginalNumber) ? amountOriginalNumber : NaN;
+  }
+
+  const exchangeRateNumber = parseFloat(exchangeRate || "0");
+  if (!Number.isFinite(amountEgp) || !(exchangeRateNumber > 0)) {
+    return NaN;
+  }
+
+  return amountEgp / exchangeRateNumber;
+}
+
 export function buildOverpaymentMessage(
-  remainingAllowedEgp: number,
+  remainingAllowed: number,
   formatter?: (value: number) => string,
+  currencyLabel: string = "ج.م",
 ): string {
-  const formattedValue = formatter ? formatter(remainingAllowedEgp) : remainingAllowedEgp.toFixed(2);
-  return `لا يمكن دفع هذا المبلغ - الحد المسموح به حاليًا هو ${formattedValue} ج.م`;
+  const formattedValue = formatter ? formatter(remainingAllowed) : remainingAllowed.toFixed(2);
+  return `لا يمكن دفع هذا المبلغ - الحد المسموح به حاليًا هو ${formattedValue} ${currencyLabel}`;
 }
 
 export function validateRemainingAllowance({
-  remainingAllowedEgp,
-  attemptedAmountEgp,
+  remainingAllowed,
+  attemptedAmount,
   formatter,
+  currencyLabel,
 }: {
-  remainingAllowedEgp?: number;
-  attemptedAmountEgp: number;
+  remainingAllowed?: number;
+  attemptedAmount: number;
   formatter?: (value: number) => string;
+  currencyLabel?: string;
 }): { allowed: boolean; message?: string } {
-  if (remainingAllowedEgp === undefined || !Number.isFinite(attemptedAmountEgp)) {
+  if (remainingAllowed === undefined || !Number.isFinite(attemptedAmount)) {
     return { allowed: true };
   }
 
-  if (attemptedAmountEgp > remainingAllowedEgp + 0.0001) {
+  if (attemptedAmount > remainingAllowed + 0.0001) {
     return {
       allowed: false,
-      message: buildOverpaymentMessage(remainingAllowedEgp, formatter),
+      message: buildOverpaymentMessage(remainingAllowed, formatter, currencyLabel),
     };
   }
 
