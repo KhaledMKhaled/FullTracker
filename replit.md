@@ -17,7 +17,7 @@ The application is built as a full-stack web application with a clear separation
 - **Frontend**: React, TypeScript, Vite, Wouter (routing), shadcn/ui, Tailwind CSS, TanStack Query.
 - **Backend**: Express.js, Node.js.
 - **Database**: PostgreSQL (Neon-backed, via Drizzle ORM).
-- **Authentication**: Replit Auth (OpenID Connect).
+- **Authentication**: Passport.js local strategy (username/password). Initial admin account uses username `root` with the password set in the `ROOT_PASSWORD` secret.
 
 ### Key Features
 - **Shipment Workflow**: A 5-step wizard (Import, Shipping, Customs & Takhreej, Missing Pieces, Summary) guides users through the shipment process, calculating costs at each stage.
@@ -54,7 +54,7 @@ The application is built as a full-stack web application with a clear separation
 - FIFO auto-allocation of payments to outstanding invoices in local trade.
 
 ## External Dependencies
-- **Replit Auth**: For user authentication and session management (OpenID Connect).
+- **Passport.js**: Local username/password authentication. Sessions stored in PostgreSQL via `connect-pg-simple`.
 - **Neon**: Managed PostgreSQL database service.
 - **Replit Object Storage**: For persistent storage of uploaded images and attachments (e.g., item images, payment attachments).
 - **html2canvas & jsPDF**: Used for generating PDF exports of shipment summaries and account statements.
