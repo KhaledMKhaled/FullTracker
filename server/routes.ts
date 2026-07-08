@@ -1497,6 +1497,13 @@ export async function registerRoutes(
           source: paymentAllowance.recoveredFromItems ? "recovered" : "declared",
         },
         currencyAllowance: {
+          rmbToEgpRate: await (async () => {
+            const shipmentRate = parseAmountOrZero(shipment.purchaseRmbToEgpRate);
+            if (shipmentRate > 0) return shipmentRate.toFixed(4);
+            const latestRate = await routeStorage.getLatestRate("RMB", "EGP");
+            const latestValue = latestRate ? parseAmountOrZero(latestRate.rateValue) : 0;
+            return latestValue > 0 ? latestValue.toFixed(4) : null;
+          })(),
           rmb: {
             knownTotal: paymentSnapshot.currencyAllowance.rmb.knownTotal.toFixed(2),
             paid: paymentSnapshot.currencyAllowance.rmb.paid.toFixed(2),

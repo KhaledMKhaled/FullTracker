@@ -58,6 +58,17 @@ test("deriveAmountInComponentCurrency converts EGP payments to RMB for RMB compo
   assert.equal(amount, 100);
 });
 
+test("deriveAmountInComponentCurrency returns NaN for EGP payments on RMB components without a rate", () => {
+  const amount = deriveAmountInComponentCurrency({
+    componentCurrency: "RMB",
+    paymentCurrency: "EGP",
+    amountOriginal: "700",
+    exchangeRate: null,
+  });
+
+  assert.ok(Number.isNaN(amount));
+});
+
 test("deriveAmountInComponentCurrency uses EGP amount for EGP components", () => {
   const amount = deriveAmountInComponentCurrency({
     componentCurrency: "EGP",

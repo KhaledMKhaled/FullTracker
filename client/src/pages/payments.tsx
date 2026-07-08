@@ -241,6 +241,7 @@ interface InvoiceSummary {
     source: "declared" | "recovered";
   };
   currencyAllowance?: {
+    rmbToEgpRate?: string | null;
     rmb: { knownTotal: string; paid: string; remaining: string };
     egp: { knownTotal: string; paid: string; remaining: string };
   };
@@ -890,19 +891,29 @@ export default function Payments() {
 
     if (currencyLimit && Number.isFinite(currencyKnownTotal) && currencyKnownTotal > 0) {
       const remainingCurrencyValue = parseFloat(currencyLimit.remaining);
+      const fallbackRate = latestInvoiceSummary?.currencyAllowance?.rmbToEgpRate ?? null;
+      const effectiveExchangeRate =
+        exchangeRate && parseFloat(exchangeRate) > 0 ? exchangeRate : fallbackRate;
       const attemptedInComponentCurrency = deriveAmountInComponentCurrency({
         componentCurrency,
         paymentCurrency,
         amountOriginal,
-        exchangeRate,
+        exchangeRate: effectiveExchangeRate,
       });
 
-      validation = validateRemainingAllowance({
-        remainingAllowed: Number.isFinite(remainingCurrencyValue) ? remainingCurrencyValue : undefined,
-        attemptedAmount: attemptedInComponentCurrency,
-        formatter: (value) => formatCurrency(value),
-        currencyLabel: componentCurrency === "RMB" ? "¥" : "ج.م",
-      });
+      if (!Number.isFinite(attemptedInComponentCurrency)) {
+        validation = {
+          allowed: false,
+          message: "تعذر التحقق من الحد المسموح - سعر صرف اليوان غير متوفر",
+        };
+      } else {
+        validation = validateRemainingAllowance({
+          remainingAllowed: Number.isFinite(remainingCurrencyValue) ? remainingCurrencyValue : undefined,
+          attemptedAmount: attemptedInComponentCurrency,
+          formatter: (value) => formatCurrency(value),
+          currencyLabel: componentCurrency === "RMB" ? "¥" : "ج.م",
+        });
+      }
     } else {
       const remainingAllowedValue =
         latestInvoiceSummary?.paymentAllowance?.remainingAllowedEgp !== undefined
