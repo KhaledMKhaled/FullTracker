@@ -392,48 +392,20 @@ export default function ShipmentWizard() {
   const handleImageUpload = async (index: number, file: File) => {
     setUploadingImage(index);
     try {
-      // Step 1: Request presigned URL from backend
-      const urlResponse = await fetch("/api/upload/item-image/request-url", {
+      const formData = new FormData();
+      formData.append("image", file);
+
+      const uploadResponse = await fetch("/api/upload/item-image", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({
-          name: file.name,
-          size: file.size,
-          contentType: file.type || "image/jpeg",
-        }),
+        body: formData,
       });
-      
-      if (!urlResponse.ok) {
-        throw new Error("فشل الحصول على رابط الرفع");
-      }
-      
-      const { uploadURL, objectPath } = await urlResponse.json();
-      
-      // Step 2: Upload file directly to Google Cloud Storage
-      const uploadResponse = await fetch(uploadURL, {
-        method: "PUT",
-        body: file,
-        headers: { "Content-Type": file.type || "image/jpeg" },
-      });
-      
+
       if (!uploadResponse.ok) {
         throw new Error("فشل رفع الصورة");
       }
-      
-      // Step 3: Finalize upload (set ACL and get final path)
-      const finalizeResponse = await fetch("/api/upload/item-image/finalize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ objectPath }),
-      });
-      
-      if (!finalizeResponse.ok) {
-        throw new Error("فشل حفظ الصورة");
-      }
-      
-      const { imageUrl } = await finalizeResponse.json();
+
+      const { imageUrl } = await uploadResponse.json();
       updateItem(index, "imageUrl", imageUrl);
       toast({ title: "تم رفع الصورة بنجاح" });
     } catch (error) {
