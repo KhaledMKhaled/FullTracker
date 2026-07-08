@@ -2718,6 +2718,23 @@ export default function Payments() {
                 {invoiceSummary.shipmentCode} - {invoiceSummary.shipmentName}
               </div>
 
+              {invoiceSummary.paidByCurrency && Object.keys(invoiceSummary.paidByCurrency).length > 0 && (
+                <div className="border rounded-md p-3 space-y-1">
+                  <div className="text-xs text-muted-foreground">تفاصيل المدفوعات حسب العملة:</div>
+                  {Object.entries(invoiceSummary.paidByCurrency).map(([currency, values]) => (
+                    <div key={currency} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">مدفوع {currency}:</span>
+                      <span className="text-left font-mono">
+                        {formatCurrency(values.original)} {currency}
+                        <span className="text-muted-foreground text-xs ml-2">
+                          ({formatCurrency(values.convertedToEgp)} ج.م)
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* RMB Section */}
               <div className="border rounded-md p-3 space-y-2">
                 <h4 className="font-medium text-sm flex items-center gap-2">
