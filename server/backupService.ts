@@ -534,6 +534,28 @@ export async function startBackup(userId: string): Promise<BackupJob> {
   return job;
 }
 
+export function validateBackupZip(zipBuffer: Buffer): { valid: boolean; error?: string } {
+  let zip: AdmZip;
+  try {
+    zip = new AdmZip(zipBuffer);
+  } catch {
+    return { valid: false, error: "الملف تالف أو ليس ملف ZIP صالح" };
+  }
+  let entries;
+  try {
+    entries = zip.getEntries();
+  } catch {
+    return { valid: false, error: "الملف تالف أو ليس ملف ZIP صالح" };
+  }
+  if (!entries.some((e) => e.entryName === "database.sql")) {
+    return { valid: false, error: "نسخة احتياطية غير صالحة: ملف database.sql غير موجود داخل الملف" };
+  }
+  if (!entries.some((e) => e.entryName === "manifest.json")) {
+    return { valid: false, error: "نسخة احتياطية غير صالحة: ملف manifest.json غير موجود داخل الملف" };
+  }
+  return { valid: true };
+}
+
 export async function startRestore(userId: string, backupPath: string): Promise<BackupJob> {
   const job = await createBackupJob(userId, "restore");
 
@@ -544,21 +566,24 @@ export async function startRestore(userId: string, backupPath: string): Promise<
       const zipBuffer = await readZipBuffer(backupPath);
       await updateJobProgress(job.id, 20);
 
+      const validation = validateBackupZip(zipBuffer);
+      if (!validation.valid) {
+        throw new Error(validation.error);
+      }
+
       const zip = new AdmZip(zipBuffer);
       const zipEntries = zip.getEntries();
 
-      const manifestEntry = zipEntries.find((e) => e.entryName === "manifest.json");
-      if (!manifestEntry) {
-        throw new Error("Invalid backup: manifest.json not found");
+      const manifestEntry = zipEntries.find((e) => e.entryName === "manifest.json")!;
+      let manifest: BackupManifest;
+      try {
+        manifest = JSON.parse(manifestEntry.getData().toString("utf-8"));
+      } catch {
+        throw new Error("نسخة احتياطية غير صالحة: ملف manifest.json تالف");
       }
-
-      const manifest: BackupManifest = JSON.parse(manifestEntry.getData().toString("utf-8"));
       await updateJobProgress(job.id, 25);
 
-      const databaseEntry = zipEntries.find((e) => e.entryName === "database.sql");
-      if (!databaseEntry) {
-        throw new Error("Invalid backup: database.sql not found");
-      }
+      const databaseEntry = zipEntries.find((e) => e.entryName === "database.sql")!;
 
       const sqlContent = databaseEntry.getData().toString("utf-8");
       await runPsqlRestore(sqlContent);

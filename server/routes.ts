@@ -6,7 +6,7 @@ import { normalizePaymentAmounts } from "./services/currency";
 import { logAuditEvent } from "./audit";
 import { getPaymentsWithShipments } from "./payments";
 import { createShipmentWithItems, updateShipmentWithItems, updateMissingPieces } from "./shipmentService";
-import { startBackup, startRestore, getBackupJobs, getBackupJob } from "./backupService";
+import { startBackup, startRestore, getBackupJobs, getBackupJob, validateBackupZip } from "./backupService";
 import { ApiError, formatError, success } from "./errors";
 import type { User } from "@shared/schema";
 import {
@@ -2586,6 +2586,11 @@ export async function registerRoutes(
       
       if (!file.originalname.endsWith(".zip")) {
         return res.status(400).json({ message: "يجب أن يكون الملف بصيغة ZIP" });
+      }
+
+      const validation = validateBackupZip(file.buffer);
+      if (!validation.valid) {
+        return res.status(400).json({ message: validation.error });
       }
       
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
