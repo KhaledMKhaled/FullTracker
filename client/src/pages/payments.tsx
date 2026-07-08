@@ -2718,40 +2718,6 @@ export default function Payments() {
                 {invoiceSummary.shipmentCode} - {invoiceSummary.shipmentName}
               </div>
 
-              <div className="border rounded-md p-3 space-y-2">
-                <h4 className="font-medium text-sm flex items-center gap-2">
-                  <span className="text-lg">ج.م</span>
-                  الملخص المالي
-                </h4>
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  <span className="text-muted-foreground">التكلفة المعروفة:</span>
-                  <span className="text-left font-mono">{formatCurrency(invoiceSummary.knownTotalCost)} ج.م</span>
-
-                  <span className="text-muted-foreground">المدفوع (محول):</span>
-                  <span className="text-left font-mono text-green-600 dark:text-green-400">{formatCurrency(invoiceSummary.totalPaidEgp)} ج.م</span>
-
-                  <span className="text-muted-foreground">المتبقي المسموح:</span>
-                  <span className="text-left font-mono text-red-600 dark:text-red-400">{formatCurrency(invoiceSummary.remainingAllowed)} ج.م</span>
-                </div>
-
-                {invoiceSummary.paidByCurrency && Object.keys(invoiceSummary.paidByCurrency).length > 0 && (
-                  <div className="pt-2 border-t space-y-1">
-                    <div className="text-xs text-muted-foreground">تفاصيل المدفوعات حسب العملة:</div>
-                    {Object.entries(invoiceSummary.paidByCurrency).map(([currency, values]) => (
-                      <div key={currency} className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">مدفوع {currency}:</span>
-                        <span className="text-left font-mono">
-                          {formatCurrency(values.original)} {currency}
-                          <span className="text-muted-foreground text-xs ml-2">
-                            ({formatCurrency(values.convertedToEgp)} ج.م)
-                          </span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              
               {/* RMB Section */}
               <div className="border rounded-md p-3 space-y-2">
                 <h4 className="font-medium text-sm flex items-center gap-2">
