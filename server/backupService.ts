@@ -12,8 +12,30 @@ import { ObjectStorageService } from "./replit_integrations/object_storage/objec
 
 const execAsync = promisify(exec);
 
-const PG_DUMP_PATH = "/nix/store/r8ivqqhsp8v042nhw5sap9kz2g6ar4v1-postgresql-16.9/bin/pg_dump";
-const PSQL_PATH = "/nix/store/r8ivqqhsp8v042nhw5sap9kz2g6ar4v1-postgresql-16.9/bin/psql";
+import { execSync } from "child_process";
+
+function resolvePgTool(toolName: string): string {
+  try {
+    const found = execSync(`which ${toolName}`, { encoding: "utf-8" }).trim();
+    if (found) return found;
+  } catch {
+    // not in PATH, fall through
+  }
+  return toolName;
+}
+
+let pgDumpPath: string | null = null;
+let psqlPath: string | null = null;
+
+function getPgDumpPath(): string {
+  if (!pgDumpPath) pgDumpPath = resolvePgTool("pg_dump");
+  return pgDumpPath;
+}
+
+function getPsqlPath(): string {
+  if (!psqlPath) psqlPath = resolvePgTool("psql");
+  return psqlPath;
+}
 
 const objectStorage = new ObjectStorageService();
 
@@ -105,7 +127,7 @@ async function runPgDump(): Promise<string> {
     throw new Error("DATABASE_URL environment variable is not set");
   }
   const { stdout } = await execAsync(
-    `${PG_DUMP_PATH} "${databaseUrl}" --format=plain --no-owner --no-acl ` +
+    `${getPgDumpPath()} "${databaseUrl}" --format=plain --no-owner --no-acl ` +
     `--exclude-schema=_system ` +
     `--exclude-table='replit_*' ` +
     `--exclude-table='public.replit_*' ` +
@@ -221,7 +243,7 @@ async function clearDatabaseTables(): Promise<void> {
   
   // Get all tables in public schema, excluding Replit internal tables, sessions (to preserve user login), and backup_jobs (to preserve job tracking)
   const { stdout: tablesOutput } = await execAsync(
-    `${PSQL_PATH} "${databaseUrl}" -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'replit_%' AND tablename NOT IN ('sessions', 'backup_jobs')"`
+    `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'replit_%' AND tablename NOT IN ('sessions', 'backup_jobs')"`
   );
   
   const tables = tablesOutput
@@ -231,7 +253,7 @@ async function clearDatabaseTables(): Promise<void> {
   
   // Get all sequences in public schema, excluding Replit internal sequences, sessions-related sequences, and backup_jobs sequences
   const { stdout: seqOutput } = await execAsync(
-    `${PSQL_PATH} "${databaseUrl}" -t -c "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' AND sequencename NOT LIKE 'replit_%' AND sequencename NOT LIKE 'sessions%' AND sequencename NOT LIKE 'backup_jobs%'"`
+    `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' AND sequencename NOT LIKE 'replit_%' AND sequencename NOT LIKE 'sessions%' AND sequencename NOT LIKE 'backup_jobs%'"`
   );
   
   const sequences = seqOutput
@@ -250,7 +272,7 @@ async function clearDatabaseTables(): Promise<void> {
   ].join("\n");
   
   return new Promise((resolve, reject) => {
-    const psql = spawn(PSQL_PATH, [databaseUrl], {
+    const psql = spawn(getPsqlPath(), [databaseUrl], {
       stdio: ["pipe", "pipe", "pipe"],
     });
     
@@ -291,7 +313,7 @@ async function runPsqlRestore(sqlContent: string): Promise<void> {
   
   return new Promise((resolve, reject) => {
     // Use --single-transaction for atomicity and ON_ERROR_STOP for strict error handling
-    const psql = spawn(PSQL_PATH, [databaseUrl, "-v", "ON_ERROR_STOP=1", "--single-transaction"], {
+    const psql = spawn(getPsqlPath(), [databaseUrl, "-v", "ON_ERROR_STOP=1", "--single-transaction"], {
       stdio: ["pipe", "pipe", "pipe"],
     });
     
@@ -333,10 +355,10 @@ async function getDatabaseStats(): Promise<{ tables: number; size: string }> {
   }
   try {
     const { stdout: tableCountResult } = await execAsync(
-      `${PSQL_PATH} "${databaseUrl}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"`
+      `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public'"`
     );
     const { stdout: sizeResult } = await execAsync(
-      `${PSQL_PATH} "${databaseUrl}" -t -c "SELECT pg_size_pretty(pg_database_size(current_database()))"`
+      `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT pg_size_pretty(pg_database_size(current_database()))"`
     );
     return {
       tables: parseInt(tableCountResult.trim(), 10) || 0,
