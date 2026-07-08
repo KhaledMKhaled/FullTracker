@@ -2771,18 +2771,6 @@ export default function Payments() {
 
               {invoiceSummary.paymentAllowance && (
                 <div className="border rounded-md p-3 bg-muted/40 space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">إجمالي التكاليف المعروفة (ج.م)</span>
-                    <span className="font-mono font-medium">
-                      {formatCurrency(invoiceSummary.paymentAllowance.knownTotalEgp)} ج.م
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">المدفوع حتى الآن (ج.م)</span>
-                    <span className="font-mono">
-                      {formatCurrency(invoiceSummary.paymentAllowance.alreadyPaidEgp)} ج.م
-                    </span>
-                  </div>
                   {invoiceSummary.currencyAllowance ? (
                     <>
                       <div className="flex items-center justify-between text-sm font-semibold text-emerald-700 dark:text-emerald-400">
