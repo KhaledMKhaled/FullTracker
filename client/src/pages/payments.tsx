@@ -2020,32 +2020,50 @@ export default function Payments() {
 
       {/* Stats Cards */}
       {loadingStats ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-28" />
           ))}
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <StatCard
-            title="إجمالي تكلفة الشحنات"
-            value={`${formatCurrency(stats?.totalCostEgp || 0)} ج.م`}
-            icon={Ship}
-          />
-          <StatCard
-            title="إجمالي المدفوع"
-            value={`${formatCurrency(stats?.totalPaidEgp || 0)} ج.م`}
-            icon={CreditCard}
-            trend="up"
-          />
-          <StatCard
-            title="إجمالي المتبقي"
-            value={`${formatCurrency(stats?.totalBalanceEgp || 0)} ج.م`}
-            icon={TrendingDown}
-            trend={parseFloat(stats?.totalBalanceEgp || "0") > 0 ? "down" : undefined}
-          />
-        </div>
-      )}
+      ) : (() => {
+        const num = (value?: string) => {
+          const parsed = parseFloat(value || "0");
+          return Number.isFinite(parsed) ? parsed : 0;
+        };
+        const remainingRmb =
+          num(stats?.purchaseBalanceRmb) +
+          num(stats?.shippingBalanceRmb) +
+          num(stats?.commissionBalanceRmb);
+        const remainingEgp =
+          num(stats?.customsBalanceEgp) + num(stats?.takhreegBalanceEgp);
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              title="إجمالي تكلفة الشحنات"
+              value={`${formatCurrency(stats?.totalCostEgp || 0)} ج.م`}
+              icon={Ship}
+            />
+            <StatCard
+              title="إجمالي المدفوع"
+              value={`${formatCurrency(stats?.totalPaidEgp || 0)} ج.م`}
+              icon={CreditCard}
+              trend="up"
+            />
+            <StatCard
+              title="إجمالي المتبقي (يوان)"
+              value={`${formatCurrency(remainingRmb)} ¥`}
+              icon={TrendingDown}
+              trend={remainingRmb > 0 ? "down" : undefined}
+            />
+            <StatCard
+              title="إجمالي المتبقي (جنيه)"
+              value={`${formatCurrency(remainingEgp)} ج.م`}
+              icon={TrendingDown}
+              trend={remainingEgp > 0 ? "down" : undefined}
+            />
+          </div>
+        );
+      })()}
 
       {/* Tabs */}
       <Tabs defaultValue="shipments" className="space-y-4">
