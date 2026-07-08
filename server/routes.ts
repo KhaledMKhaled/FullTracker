@@ -1,7 +1,7 @@
 import type { Express, RequestHandler } from "express";
 import type { Server } from "http";
 import { storage, type IStorage } from "./storage";
-import { setupAuth, isAuthenticated, requireRole } from "./auth";
+import { setupAuth, isAuthenticated as defaultIsAuthenticated, requireRole as defaultRequireRole } from "./auth";
 import { normalizePaymentAmounts } from "./services/currency";
 import { logAuditEvent } from "./audit";
 import { getPaymentsWithShipments } from "./payments";
@@ -640,7 +640,12 @@ export async function registerRoutes(
   deps: RouteDependencies = {},
 ): Promise<void> {
   const routeStorage: IStorage = deps.storage ?? storage;
-  const auth = deps.auth ?? { setupAuth, isAuthenticated, requireRole };
+  const auth = deps.auth ?? {
+    setupAuth,
+    isAuthenticated: defaultIsAuthenticated,
+    requireRole: defaultRequireRole,
+  };
+  const { isAuthenticated, requireRole } = auth;
   const auditLogger = deps.auditLogger ?? ((event: Parameters<typeof logAuditEvent>[0]) => logAuditEvent(event, routeStorage));
   const shipmentService = deps.shipments ?? { createShipmentWithItems, updateShipmentWithItems };
   // Setup authentication

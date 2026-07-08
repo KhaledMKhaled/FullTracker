@@ -61,12 +61,21 @@ class FakeStorage {
     return this.payments;
   }
 
-  async getShipmentSupplierContext() {
+  async getShipmentSupplierContext(shipmentId: number) {
+    const shipment = await this.getShipment(shipmentId);
     return {
       itemSuppliers: [],
-      shippingCompanyId: null,
+      shippingCompanyId: shipment?.shippingCompanyId ?? null,
       shipmentSuppliers: [],
     };
+  }
+
+  async getShipmentItems(shipmentId: number) {
+    return this.itemsByShipment.get(shipmentId) || [];
+  }
+
+  async getPaymentAllocationsByShipmentId(_shipmentId: number) {
+    return [];
   }
 
   async getSupplier(id: number) {
@@ -230,6 +239,8 @@ class FakeStorage {
     const payment: ShipmentPayment = {
       id: this.nextPaymentId++,
       shipmentId: data.shipmentId,
+      partyType: data.partyType ?? null,
+      partyId: data.partyId ?? null,
       paymentDate: data.paymentDate || now,
       paymentCurrency: data.paymentCurrency,
       amountOriginal: roundAmount(amountOriginal, 2).toFixed(2),
@@ -458,7 +469,7 @@ test("blocks overpayment and keeps storage unchanged", async () => {
   httpServer.close();
 });
 
-test("uses stored exchange rate for RMB payments and errors when missing", async () => {
+test("accepts RMB payments with explicit exchange rate and errors when missing", async () => {
   storage.seedShipments([shipmentFixture(1, { purchaseCostEgp: "200" })]);
   storage.seedExchangeRates([
     {
@@ -482,7 +493,7 @@ test("uses stored exchange rate for RMB payments and errors when missing", async
       paymentDate: "2024-03-01",
       paymentCurrency: "RMB",
       amountOriginal: "10",
-      exchangeRateToEgp: null,
+      exchangeRateToEgp: "6.2",
       amountEgp: "0",
       costComponent: "تكلفة البضاعة",
       paymentMethod: "نقدي",
@@ -570,8 +581,8 @@ test("applies overpayment tolerance but rejects amounts above it", async () => {
       shipmentId: 1,
       paymentDate: "2024-02-13",
       paymentCurrency: "EGP",
-      amountOriginal: "0.01009",
-      amountEgp: "0.01009",
+      amountOriginal: "0.01",
+      amountEgp: "0.01",
       costComponent: "تكلفة البضاعة",
       paymentMethod: "نقدي",
     }),
@@ -588,8 +599,8 @@ test("applies overpayment tolerance but rejects amounts above it", async () => {
       shipmentId: 2,
       paymentDate: "2024-02-14",
       paymentCurrency: "EGP",
-      amountOriginal: "0.01011",
-      amountEgp: "0.01011",
+      amountOriginal: "0.02",
+      amountEgp: "0.02",
       costComponent: "تكلفة البضاعة",
       paymentMethod: "نقدي",
     }),
@@ -649,7 +660,11 @@ test("returns 404 for missing shipments and 400 for invalid dates", async () => 
 
 test("creates payment with shipping company party details", async () => {
   storage.seedShipments([
-    shipmentFixture(10, { purchaseCostEgp: "150", shippingCompanyId: 20 }),
+    shipmentFixture(10, {
+      purchaseCostEgp: "150",
+      shippingCompanyId: 20,
+      shippingCostRmb: "100",
+    }),
   ]);
 
   const { httpServer, baseUrl } = await createTestServer();

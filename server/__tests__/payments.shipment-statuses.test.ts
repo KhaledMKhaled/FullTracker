@@ -59,6 +59,10 @@ class FakeStorage {
     return this.shipmentItems.get(shipmentId) ?? [];
   }
 
+  async getPaymentAllocationsByShipmentId(_shipmentId: number) {
+    return [];
+  }
+
   async getLatestRate(fromCurrency: string, toCurrency: string) {
     if (fromCurrency === "RMB" && toCurrency === "EGP") {
       return {
@@ -291,6 +295,29 @@ for (const status of STATUSES) {
     });
 
     storage.shipmentSuppliers.set(shipmentId, [supplierId]);
+
+    storage.shipmentItems.set(shipmentId, [
+      {
+        id: shipmentId * 10,
+        shipmentId,
+        supplierId,
+        productName: "Status Item",
+        totalPurchaseCostRmb: "1000",
+        cartonsCtn: 1,
+        unitCostRmb: null,
+        purchaseCostPerCartonRmb: null,
+        customsCostPerCartonEgp: null,
+        takhreegCostPerCartonEgp: null,
+        totalCustomsCostEgp: null,
+        totalTakhreegCostEgp: null,
+        totalPieces: null,
+        productTypeId: null,
+        sku: null,
+        notes: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as any,
+    ]);
 
     storage.shipments.set(
       shipmentId,
