@@ -131,7 +131,15 @@ async function initializeRootUser() {
   try {
     const existingRoot = await storage.getUserByUsername("root");
     if (!existingRoot) {
-      const hashedPassword = await bcrypt.hash("123123123", 10);
+      const rootPassword = process.env.ROOT_PASSWORD;
+      if (!rootPassword) {
+        console.error(
+          "⚠️  ROOT_PASSWORD environment variable is not set. " +
+          "Please set ROOT_PASSWORD in your environment secrets to create the initial admin account."
+        );
+        return;
+      }
+      const hashedPassword = await bcrypt.hash(rootPassword, 10);
       await storage.createUser({
         username: "root",
         password: hashedPassword,
