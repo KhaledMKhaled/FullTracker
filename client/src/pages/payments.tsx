@@ -2175,8 +2175,7 @@ export default function Payments() {
                                 </TableCell>
                                 <TableCell>
                                   <BalanceBadge
-                                    cost={shipment.finalTotalCostEgp}
-                                    paid={shipment.totalPaidEgp}
+                                    {...computeShipmentSettlement(shipment, shipmentPayments)}
                                   />
                                 </TableCell>
                                 <TableCell>
@@ -2869,16 +2868,65 @@ function StatCard({
   );
 }
 
+function computeShipmentSettlement(
+  shipment: Shipment,
+  shipmentPayments: ShipmentPayment[],
+): { settled: boolean; remainingEgp: number } {
+  const num = (value: string | number | null | undefined) => {
+    const parsed = typeof value === "number" ? value : parseFloat(value ?? "0");
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  // Same fallback used server-side when no shipment rate is configured
+  const purchaseRate = num(shipment.purchaseRmbToEgpRate) || 7.15;
+  const rmbKnown =
+    Math.max(0, num(shipment.purchaseCostRmb) - num(shipment.partialDiscountRmb)) +
+    num(shipment.shippingCostRmb) +
+    num(shipment.commissionCostRmb);
+  const egpKnown = num(shipment.customsCostEgp) + num(shipment.takhreegCostEgp);
+
+  let paidRmb = 0;
+  let paidEgp = 0;
+
+  for (const payment of shipmentPayments) {
+    if (getComponentCurrency(payment.costComponent) === "EGP") {
+      paidEgp += num(payment.amountEgp);
+    } else if (payment.paymentCurrency === "RMB") {
+      paidRmb += num(payment.amountOriginal);
+    } else {
+      const rate = num(payment.exchangeRateToEgp) || purchaseRate;
+      if (rate > 0) {
+        paidRmb += num(payment.amountEgp) / rate;
+      }
+    }
+  }
+
+  // When per-currency totals are unknown (e.g. costs recovered from items),
+  // fall back to the legacy combined-EGP comparison instead of showing settled.
+  if (rmbKnown <= 0 && egpKnown <= 0) {
+    const legacyRemaining = Math.max(
+      0,
+      num(shipment.finalTotalCostEgp) - num(shipment.totalPaidEgp),
+    );
+    return { settled: legacyRemaining <= 0.01, remainingEgp: legacyRemaining };
+  }
+
+  const rmbRemaining = Math.max(0, rmbKnown - paidRmb);
+  const egpRemaining = Math.max(0, egpKnown - paidEgp);
+  const settled = rmbRemaining <= 0.01 && egpRemaining <= 0.01;
+  const remainingEgp = egpRemaining + rmbRemaining * purchaseRate;
+
+  return { settled, remainingEgp };
+}
+
 function BalanceBadge({
-  cost,
-  paid,
+  settled,
+  remainingEgp,
 }: {
-  cost: string | number | null;
-  paid: string | number | null;
+  settled: boolean;
+  remainingEgp: number;
 }) {
-  const costValue = typeof cost === "string" ? parseFloat(cost) : cost || 0;
-  const paidValue = typeof paid === "string" ? parseFloat(paid) : paid || 0;
-  const remaining = Math.max(0, costValue - paidValue);
+  const remaining = Math.max(0, remainingEgp);
 
   const formatCurrency = (num: number) =>
     new Intl.NumberFormat("ar-EG", {
@@ -2886,7 +2934,7 @@ function BalanceBadge({
       maximumFractionDigits: 2,
     }).format(num);
 
-  if (remaining === 0) {
+  if (settled) {
     return (
       <Badge
         variant="outline"
