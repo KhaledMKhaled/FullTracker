@@ -1497,12 +1497,15 @@ export async function registerRoutes(
           source: paymentAllowance.recoveredFromItems ? "recovered" : "declared",
         },
         currencyAllowance: {
+          // Fallback chain must stay aligned with createPayment's
+          // validationRateToEgp resolution in storage.ts:
+          // shipment purchase rate → latest RMB→EGP rate → 7.15.
           rmbToEgpRate: await (async () => {
             const shipmentRate = parseAmountOrZero(shipment.purchaseRmbToEgpRate);
             if (shipmentRate > 0) return shipmentRate.toFixed(4);
             const latestRate = await routeStorage.getLatestRate("RMB", "EGP");
             const latestValue = latestRate ? parseAmountOrZero(latestRate.rateValue) : 0;
-            return latestValue > 0 ? latestValue.toFixed(4) : null;
+            return (latestValue > 0 ? latestValue : 7.15).toFixed(4);
           })(),
           rmb: {
             knownTotal: paymentSnapshot.currencyAllowance.rmb.knownTotal.toFixed(2),

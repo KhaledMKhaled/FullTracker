@@ -1759,21 +1759,29 @@ export class DatabaseStorage implements IStorage {
 
       if (componentCurrency === "RMB" && data.paymentCurrency === "EGP") {
         if (!validationRateToEgp) {
-          const [latestRate] = await tx
-            .select()
-            .from(exchangeRates)
-            .where(
-              and(
-                eq(exchangeRates.fromCurrency, "RMB"),
-                eq(exchangeRates.toCurrency, "EGP"),
-              ),
-            )
-            .orderBy(desc(exchangeRates.rateDate))
-            .limit(1);
+          // Fallback chain (must stay aligned with the invoice-summary
+          // rmbToEgpRate exposed to the client): shipment purchase rate →
+          // latest RMB→EGP rate → hardcoded fallback.
+          const shipmentRate = parseAmountOrZero(shipment.purchaseRmbToEgpRate);
+          if (shipmentRate > 0) {
+            validationRateToEgp = shipmentRate;
+          } else {
+            const [latestRate] = await tx
+              .select()
+              .from(exchangeRates)
+              .where(
+                and(
+                  eq(exchangeRates.fromCurrency, "RMB"),
+                  eq(exchangeRates.toCurrency, "EGP"),
+                ),
+              )
+              .orderBy(desc(exchangeRates.rateDate))
+              .limit(1);
 
-          validationRateToEgp = latestRate?.rateValue
-            ? parseAmount(latestRate.rateValue)
-            : RMB_TO_EGP_FALLBACK_RATE;
+            validationRateToEgp = latestRate?.rateValue
+              ? parseAmount(latestRate.rateValue)
+              : RMB_TO_EGP_FALLBACK_RATE;
+          }
         }
       }
 
