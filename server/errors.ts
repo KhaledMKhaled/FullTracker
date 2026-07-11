@@ -15,6 +15,8 @@ export type ErrorCode =
   | "PAYMENT_DB_ERROR"
   | "PAYMENT_FETCH_FAILED"
   | "PAYMENT_DELETE_FAILED"
+  | "PAYMENT_COMPONENT_INVALID"
+  | "AUTO_ALLOCATION_NOT_ELIGIBLE"
   | "UNKNOWN_ERROR";
 
 export interface ApiErrorShape {
@@ -43,6 +45,8 @@ const defaultMessages: Record<ErrorCode, string> = {
   PAYMENT_DB_ERROR: "تعذر حفظ الدفعة بسبب خطأ في قاعدة البيانات.",
   PAYMENT_FETCH_FAILED: "تعذر جلب بيانات المدفوعات حالياً.",
   PAYMENT_DELETE_FAILED: "تعذر حذف الدفعة.",
+  PAYMENT_COMPONENT_INVALID: "مكون التكلفة غير صالح لهذه الدفعة.",
+  AUTO_ALLOCATION_NOT_ELIGIBLE: "هذه الدفعة غير مؤهلة للتوزيع التلقائي.",
   UNKNOWN_ERROR: "حدث خطأ غير متوقع أثناء حفظ الدفعة.",
 };
 

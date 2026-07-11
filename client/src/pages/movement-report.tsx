@@ -546,7 +546,7 @@ export default function MovementReportPage() {
                           {m.direction === "payment" ? (
                             <PaymentAttachmentIcon
                               paymentId={m.paymentId}
-                              attachmentUrl={m.attachmentUrl}
+                              attachmentUrl={m.attachmentUrl ?? null}
                               attachmentOriginalName={m.attachmentOriginalName}
                             />
                           ) : (

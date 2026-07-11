@@ -933,7 +933,7 @@ export interface IStorage {
 
   // Local Receipts
   createReceipt(data: InsertLocalReceipt): Promise<LocalReceipt>;
-  receiveInvoice(invoiceId: number, userId: string): Promise<{ receipt: LocalReceipt; movementsCreated: number }>;
+  receiveInvoice(invoiceId: number, userId: string, lineReceipts?: { lineId: number; receivedPieces: number }[]): Promise<{ receipt: LocalReceipt; movementsCreated: number; marginsCreated: number }>;
 
   // Party Ledger Entries
   getPartyLedger(partyId: number, seasonId?: number): Promise<PartyLedgerEntry[]>;
@@ -1561,6 +1561,7 @@ export class DatabaseStorage implements IStorage {
         balanceEgp: rawRow.balance_egp as string | null,
         partialDiscountRmb: rawRow.partial_discount_rmb as string | null,
         discountNotes: rawRow.discount_notes as string | null,
+        totalMissingCostEgp: rawRow.total_missing_cost_egp as string | null,
         lastPaymentDate: rawRow.last_payment_date as Date | null,
         createdAt: rawRow.created_at as Date | null,
         updatedAt: rawRow.updated_at as Date | null,
@@ -3177,6 +3178,7 @@ export class DatabaseStorage implements IStorage {
       costEgp?: string;
       paidEgp?: string;
       paidRmb?: string;
+      costRmb?: string;
       runningBalance: string;
       runningBalanceRmb?: string;
       originalCurrency?: string;
@@ -4109,7 +4111,7 @@ export class DatabaseStorage implements IStorage {
     const lines = await this.getInvoiceLines(id);
 
     // Calculate paidAmount using same correlated SQL as getAllLocalInvoicesWithPayments
-    const [paidRow] = await db.execute(sql`
+    const paidResult = await db.execute(sql`
       SELECT 
         (
           SELECT COALESCE(SUM(lia.amount_egp), 0)
@@ -4125,7 +4127,8 @@ export class DatabaseStorage implements IStorage {
           )
         ) AS paid_amount
     `);
-    const paidAmount = parseFloat((paidRow as any)?.paid_amount || '0');
+    const paidRow = paidResult.rows?.[0] as Record<string, unknown> | undefined;
+    const paidAmount = parseFloat((paidRow?.paid_amount as any) || '0');
     const totalAmount = parseFloat(invoice.totalEgp?.toString() || '0');
     const remainingAmount = Math.max(0, totalAmount - paidAmount);
     let paymentStatus = 'unpaid';

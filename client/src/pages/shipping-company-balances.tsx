@@ -385,7 +385,7 @@ export default function ShippingCompanyBalancesPage() {
                           {m.type === "payment" ? (
                             <PaymentAttachmentIcon
                               paymentId={m.paymentId}
-                              attachmentUrl={m.attachmentUrl}
+                              attachmentUrl={m.attachmentUrl ?? null}
                               attachmentOriginalName={m.attachmentOriginalName}
                             />
                           ) : (
