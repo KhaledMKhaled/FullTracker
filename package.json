@@ -9,7 +9,8 @@
     "start": "NODE_ENV=production node dist/index.cjs",
     "postinstall": "node scripts/patch-tailwindcss.js",
     "check": "tsc",
-    "test": "NODE_ENV=test tsx --test",
+    "test": "NODE_ENV=test tsx --test server/backupService.test.ts server/__tests__/backupRetention.test.ts",
+    "test:all": "NODE_ENV=test tsx --test server/*.test.ts server/__tests__/*.test.ts",
     "db:push": "drizzle-kit push",
     "seed:full-e2e": "tsx server/seeds/full-e2e.ts",
     "seed:local-trade": "tsx scripts/seed-local-trade.ts"

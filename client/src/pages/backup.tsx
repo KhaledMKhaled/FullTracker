@@ -12,7 +12,16 @@ import {
   RefreshCw,
   Upload,
   FileArchive,
+  Trash2,
+  HardDrive,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -114,6 +123,7 @@ export default function BackupPage() {
   const [isUploadRestoreDialogOpen, setIsUploadRestoreDialogOpen] = useState(false);
   const [selectedBackupPath, setSelectedBackupPath] = useState<string | null>(null);
   const [selectedBackupId, setSelectedBackupId] = useState<number | null>(null);
+  const [deleteTargetJob, setDeleteTargetJob] = useState<BackupJob | null>(null);
   const [uploadedBackupPath, setUploadedBackupPath] = useState<string | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
   const [uploadedFileSize, setUploadedFileSize] = useState<number | null>(null);
@@ -126,6 +136,13 @@ export default function BackupPage() {
 
   const { data: jobs, isLoading } = useQuery<BackupJob[]>({
     queryKey: ["/api/backup/jobs"],
+  });
+
+  const { data: storageInfo } = useQuery<{
+    usage: { archiveCount: number; totalBytes: number; tableBytes: number };
+    settings: { retentionCount: number };
+  }>({
+    queryKey: ["/api/backup/storage"],
   });
 
   const hasRunningJobs = jobs?.some((job) => job.status === "running");
@@ -156,6 +173,47 @@ export default function BackupPage() {
     },
     onError: () => {
       toast({ title: "حدث خطأ أثناء بدء النسخ الاحتياطي", variant: "destructive" });
+    },
+  });
+
+  const deleteBackupMutation = useMutation({
+    mutationFn: async (jobId: number) => {
+      const res = await apiRequest("DELETE", `/api/backup/jobs/${jobId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "تم حذف النسخة الاحتياطية بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ["/api/backup/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/backup/storage"] });
+      setDeleteTargetJob(null);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: error.message || "حدث خطأ أثناء حذف النسخة الاحتياطية",
+        variant: "destructive",
+      });
+      setDeleteTargetJob(null);
+    },
+  });
+
+  const updateRetentionMutation = useMutation({
+    mutationFn: async (retentionCount: number) => {
+      const res = await apiRequest("PUT", "/api/backup/settings", { retentionCount });
+      return res.json();
+    },
+    onSuccess: (data: { deleted?: number }) => {
+      toast({
+        title: "تم حفظ سياسة الاحتفاظ",
+        description:
+          data.deleted && data.deleted > 0
+            ? `تم حذف ${data.deleted} نسخة قديمة تلقائياً`
+            : undefined,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/backup/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/backup/storage"] });
+    },
+    onError: () => {
+      toast({ title: "حدث خطأ أثناء حفظ سياسة الاحتفاظ", variant: "destructive" });
     },
   });
 
@@ -470,6 +528,49 @@ export default function BackupPage() {
         </Card>
       )}
 
+      {/* Storage usage & retention policy */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <HardDrive className="w-5 h-5 text-primary" />
+              </div>
+              <div>
+                <p className="font-medium text-sm">المساحة المستخدمة للنسخ الاحتياطية</p>
+                <p className="text-sm text-muted-foreground" data-testid="text-storage-usage">
+                  {storageInfo
+                    ? `${storageInfo.usage.archiveCount} نسخة محفوظة — ${formatFileSize(storageInfo.usage.totalBytes) === "-" ? "0 بايت" : formatFileSize(storageInfo.usage.totalBytes)}`
+                    : "جاري التحميل..."}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">سياسة الاحتفاظ:</span>
+              <Select
+                value={String(storageInfo?.settings.retentionCount ?? 0)}
+                onValueChange={(value) => updateRetentionMutation.mutate(parseInt(value, 10))}
+                disabled={!storageInfo || updateRetentionMutation.isPending}
+              >
+                <SelectTrigger className="w-56" data-testid="select-retention-policy">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">الاحتفاظ بجميع النسخ</SelectItem>
+                  <SelectItem value="3">الاحتفاظ بآخر 3 نسخ</SelectItem>
+                  <SelectItem value="5">الاحتفاظ بآخر 5 نسخ</SelectItem>
+                  <SelectItem value="10">الاحتفاظ بآخر 10 نسخ</SelectItem>
+                  <SelectItem value="20">الاحتفاظ بآخر 20 نسخة</SelectItem>
+                </SelectContent>
+              </Select>
+              {updateRetentionMutation.isPending && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="pb-4">
@@ -536,6 +637,17 @@ export default function BackupPage() {
                             >
                               <RotateCcw className="w-4 h-4 ml-1" />
                               استعادة
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => setDeleteTargetJob(job)}
+                              disabled={deleteBackupMutation.isPending}
+                              data-testid={`button-delete-${job.id}`}
+                            >
+                              <Trash2 className="w-4 h-4 ml-1" />
+                              حذف
                             </Button>
                           </div>
                         </TableCell>
@@ -656,6 +768,44 @@ export default function BackupPage() {
                 <Database className="w-4 h-4 ml-2" />
               )}
               بدء النسخ الاحتياطي
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteTargetJob !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTargetJob(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>تأكيد حذف النسخة الاحتياطية</AlertDialogTitle>
+            <AlertDialogDescription>
+              سيتم حذف النسخة الاحتياطية رقم #{deleteTargetJob?.id} نهائياً من قاعدة البيانات
+              وتحرير المساحة المستخدمة ({formatFileSize(deleteTargetJob?.fileSize ?? null)}).
+              هذه العملية لا يمكن التراجع عنها. هل أنت متأكد؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="gap-2">
+            <AlertDialogCancel disabled={deleteBackupMutation.isPending}>
+              إلغاء
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteTargetJob) deleteBackupMutation.mutate(deleteTargetJob.id);
+              }}
+              disabled={deleteBackupMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteBackupMutation.isPending ? (
+                <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+              ) : (
+                <Trash2 className="w-4 h-4 ml-2" />
+              )}
+              حذف النسخة
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -289,6 +289,14 @@ export const backupArchives = pgTable("backup_archives", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// Backup retention settings (سياسة الاحتفاظ بالنسخ الاحتياطية)
+// Single-row table; retentionCount = 0 means keep all backups (unlimited).
+export const backupSettings = pgTable("backup_settings", {
+  id: integer("id").primaryKey().default(1),
+  retentionCount: integer("retention_count").notNull().default(0),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Audit Logs table (سجل التغييرات)
 export const auditLogs = pgTable("audit_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -826,6 +834,9 @@ export const insertInventoryMovementSchema = createInsertSchema(inventoryMovemen
 export const insertAuditLogSchema = createInsertSchema(auditLogs);
 export const insertBackupJobSchema = createInsertSchema(backupJobs).omit({ createdAt: true });
 export const insertBackupArchiveSchema = createInsertSchema(backupArchives).omit({ createdAt: true });
+export const updateBackupSettingsSchema = z.object({
+  retentionCount: z.number().int().min(0).max(100),
+});
 
 // Local Trade Insert Schemas
 export const insertPartySchema = createInsertSchema(parties).omit({ createdAt: true, updatedAt: true });
@@ -875,6 +886,7 @@ export type InsertBackupJob = z.infer<typeof insertBackupJobSchema>;
 export type BackupJob = typeof backupJobs.$inferSelect;
 export type InsertBackupArchive = z.infer<typeof insertBackupArchiveSchema>;
 export type BackupArchive = typeof backupArchives.$inferSelect;
+export type BackupSettings = typeof backupSettings.$inferSelect;
 
 // Local Trade Types
 export type InsertParty = z.infer<typeof insertPartySchema>;

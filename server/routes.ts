@@ -15,6 +15,11 @@ import {
   readZipBufferRange,
   saveZipBuffer,
   validateBackupZip,
+  deleteBackup,
+  getBackupSettings,
+  updateBackupSettings,
+  getBackupStorageUsage,
+  applyRetentionPolicy,
 } from "./backupService";
 import { ApiError, formatError, success } from "./errors";
 import type { User } from "@shared/schema";
@@ -28,6 +33,7 @@ import {
   insertLocalInvoiceLineSchema,
   insertLocalPaymentSchema,
   insertReturnCaseSchema,
+  updateBackupSettingsSchema,
 } from "@shared/schema";
 import { calculatePaymentSnapshot, parseAmountOrZero } from "./services/paymentCalculations";
 import bcrypt from "bcryptjs";
@@ -2703,6 +2709,75 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error uploading backup:", error);
       res.status(500).json({ message: "فشل في رفع النسخة الاحتياطية" });
+    }
+  });
+
+  app.delete("/api/backup/jobs/:id", requireRole(["مدير"]), async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        return res.status(400).json({ message: "معرف غير صالح" });
+      }
+
+      const result = await deleteBackup(id);
+      if (!result.ok) {
+        return res.status(409).json({ message: result.error });
+      }
+
+      auditLogger({
+        userId: req.user!.id,
+        entityType: "BACKUP",
+        entityId: String(id),
+        actionType: "DELETE",
+        details: { action: "DELETE_BACKUP", jobId: id },
+      });
+
+      res.json({ success: true, message: "تم حذف النسخة الاحتياطية بنجاح" });
+    } catch (error) {
+      console.error("Error deleting backup:", error);
+      res.status(500).json({ message: "فشل في حذف النسخة الاحتياطية" });
+    }
+  });
+
+  app.get("/api/backup/storage", requireRole(["مدير"]), async (_req, res) => {
+    try {
+      const [usage, settings] = await Promise.all([
+        getBackupStorageUsage(),
+        getBackupSettings(),
+      ]);
+      res.json({ usage, settings: { retentionCount: settings?.retentionCount ?? 0 } });
+    } catch (error) {
+      console.error("Error fetching backup storage info:", error);
+      res.status(500).json({ message: "فشل في جلب معلومات مساحة النسخ الاحتياطية" });
+    }
+  });
+
+  app.put("/api/backup/settings", requireRole(["مدير"]), async (req, res) => {
+    try {
+      const parsed = updateBackupSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "قيمة سياسة الاحتفاظ غير صالحة" });
+      }
+
+      const settings = await updateBackupSettings(parsed.data.retentionCount);
+      const deleted = await applyRetentionPolicy();
+
+      auditLogger({
+        userId: req.user!.id,
+        entityType: "BACKUP",
+        entityId: "settings",
+        actionType: "UPDATE",
+        details: {
+          action: "UPDATE_RETENTION",
+          retentionCount: parsed.data.retentionCount,
+          deletedBackups: deleted,
+        },
+      });
+
+      res.json({ success: true, settings: { retentionCount: settings.retentionCount }, deleted });
+    } catch (error) {
+      console.error("Error updating backup settings:", error);
+      res.status(500).json({ message: "فشل في تحديث سياسة الاحتفاظ" });
     }
   });
 

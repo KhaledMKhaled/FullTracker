@@ -5,11 +5,13 @@ import path from "path";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import { PassThrough } from "stream";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, and, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   backupArchives,
   backupJobs,
+  backupSettings,
+  type BackupSettings,
   type BackupJob,
   type InsertBackupJob,
 } from "@shared/schema";
@@ -198,7 +200,11 @@ async function updateJobStatus(
   await db.update(backupJobs).set({ status, ...extras }).where(eq(backupJobs.id, jobId));
 }
 
-async function createBackupJob(userId: string, jobType: "backup" | "restore"): Promise<BackupJob> {
+async function createBackupJob(
+  userId: string,
+  jobType: "backup" | "restore",
+  outputPath?: string,
+): Promise<BackupJob> {
   const [job] = await db
     .insert(backupJobs)
     .values({
@@ -206,9 +212,17 @@ async function createBackupJob(userId: string, jobType: "backup" | "restore"): P
       status: "running",
       progress: 0,
       createdByUserId: userId,
+      ...(outputPath ? { outputPath } : {}),
     } as InsertBackupJob)
     .returning();
   return job;
+}
+
+// Serializes restore registration against archive deletion/cleanup so an
+// archive can never be deleted between "restore job created" and "reference
+// visible". Both sides take this transaction-scoped advisory lock.
+function archiveLockSql(backupPath: string) {
+  return sql`SELECT pg_advisory_xact_lock(hashtext(${backupPath}))`;
 }
 
 async function runPgDump(): Promise<string> {
@@ -633,6 +647,12 @@ export async function startBackup(userId: string): Promise<BackupJob> {
       });
 
       await updateJobProgress(job.id, 100);
+
+      try {
+        await applyRetentionPolicy();
+      } catch (retentionErr) {
+        console.warn("Could not apply backup retention policy:", retentionErr);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("Backup failed:", errorMessage);
@@ -669,7 +689,36 @@ export function validateBackupZip(zipBuffer: Buffer): { valid: boolean; error?: 
 }
 
 export async function startRestore(userId: string, backupPath: string): Promise<BackupJob> {
-  const job = await createBackupJob(userId, "restore");
+  // Register the restore job with its archive reference atomically, under the
+  // archive advisory lock, so a concurrent delete/retention run either sees
+  // the reference or has already removed the archive (making this fail fast).
+  const job = await db.transaction(async (tx) => {
+    await tx.execute(archiveLockSql(backupPath));
+
+    if (isDatabaseBackupPath(backupPath)) {
+      const archiveId = backupPath.slice("db-backup:".length);
+      const [archive] = await tx
+        .select({ id: backupArchives.id })
+        .from(backupArchives)
+        .where(eq(backupArchives.id, archiveId))
+        .limit(1);
+      if (!archive) {
+        throw new Error("النسخة الاحتياطية المطلوبة لم تعد موجودة");
+      }
+    }
+
+    const [created] = await tx
+      .insert(backupJobs)
+      .values({
+        jobType: "restore",
+        status: "running",
+        progress: 0,
+        createdByUserId: userId,
+        outputPath: backupPath,
+      } as InsertBackupJob)
+      .returning();
+    return created;
+  });
 
   (async () => {
     try {
@@ -765,6 +814,14 @@ export async function startRestore(userId: string, backupPath: string): Promise<
       });
 
       await updateJobProgress(job.id, 100);
+
+      // Uploaded-for-restore archives have no backup job owning them; once the
+      // restore succeeds they are consumed and deleted to free space.
+      try {
+        await cleanupConsumedUploadedArchive(backupPath, job.id);
+      } catch (cleanupErr) {
+        console.warn("Could not clean up uploaded restore archive:", cleanupErr);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       console.error("Restore failed:", errorMessage);
@@ -787,6 +844,18 @@ export async function getBackupJob(id: number): Promise<BackupJob | undefined> {
   return job;
 }
 
+export async function getBackupSettings(): Promise<BackupSettings> {
+  const [existing] = await db.select().from(backupSettings).limit(1);
+  if (existing) return existing;
+  const [created] = await db
+    .insert(backupSettings)
+    .values({ id: 1, retentionCount: 0 })
+    .onConflictDoNothing()
+    .returning();
+  if (created) return created;
+  const [row] = await db.select().from(backupSettings).limit(1);
+  return row;
+}
 function getContentType(filename: string): string {
   const ext = filename.split(".").pop()?.toLowerCase();
   const mimeTypes: Record<string, string> = {
@@ -806,3 +875,200 @@ function getContentType(filename: string): string {
   };
   return mimeTypes[ext || ""] || "application/octet-stream";
 }
+
+export async function updateBackupSettings(retentionCount: number): Promise<BackupSettings> {
+  await getBackupSettings();
+  const [updated] = await db
+    .update(backupSettings)
+    .set({ retentionCount, updatedAt: new Date() })
+    .where(eq(backupSettings.id, 1))
+    .returning();
+  return updated;
+}
+
+export async function getBackupStorageUsage(): Promise<BackupStorageUsage> {
+  const [row] = await db
+    .select({
+      archiveCount: sql<number>`count(*)::int`,
+      totalBytes: sql<number>`coalesce(sum(${backupArchives.size}), 0)::bigint`,
+    })
+    .from(backupArchives);
+
+  let tableBytes = 0;
+  try {
+    const result = await db.execute(
+      sql`SELECT pg_total_relation_size('public.backup_archives')::bigint AS bytes`,
+    );
+    const rows = (result as unknown as { rows?: Array<{ bytes: string | number }> }).rows ?? [];
+    if (rows[0]) tableBytes = Number(rows[0].bytes) || 0;
+  } catch {
+    // pg_total_relation_size is informational only
+  }
+
+  return {
+    archiveCount: Number(row?.archiveCount ?? 0),
+    totalBytes: Number(row?.totalBytes ?? 0),
+    tableBytes,
+  };
+}
+
+export async function applyRetentionPolicy(): Promise<number> {
+  try {
+    await cleanupOrphanedUploadedArchives();
+  } catch (err) {
+    console.warn("Could not clean up orphaned uploaded archives:", err);
+  }
+
+  const settings = await getBackupSettings();
+  const retentionCount = settings?.retentionCount ?? 0;
+  if (!retentionCount || retentionCount <= 0) return 0;
+
+  const completedBackups = await db
+    .select()
+    .from(backupJobs)
+    .where(and(eq(backupJobs.jobType, "backup"), eq(backupJobs.status, "completed")))
+    .orderBy(desc(backupJobs.createdAt));
+
+  const excess = completedBackups.slice(retentionCount);
+  let deleted = 0;
+  for (const job of excess) {
+    const result = await deleteBackup(job.id);
+    if (result.ok) {
+      deleted++;
+    } else {
+      console.warn(`[Retention] Skipped backup #${job.id}: ${result.error}`);
+    }
+  }
+  if (deleted > 0) {
+    console.log(`[Retention] Deleted ${deleted} old backup(s) beyond the latest ${retentionCount}`);
+  }
+  return deleted;
+}
+
+export interface BackupStorageUsage {
+  archiveCount: number;
+  totalBytes: number;
+  tableBytes: number;
+}
+
+export async function deleteBackup(jobId: number): Promise<{ ok: true } | { ok: false; error: string }> {
+  return db.transaction(async (tx) => {
+    const [job] = await tx
+      .select()
+      .from(backupJobs)
+      .where(eq(backupJobs.id, jobId))
+      .for("update");
+    if (!job || job.jobType !== "backup") {
+      return { ok: false as const, error: "النسخة الاحتياطية غير موجودة" };
+    }
+    if (job.status === "running" || job.status === "pending") {
+      return { ok: false as const, error: "لا يمكن حذف نسخة احتياطية ما زالت وظيفتها قيد التنفيذ" };
+    }
+
+    if (job.outputPath) {
+      // Serialize against restore registration for this archive.
+      await tx.execute(archiveLockSql(job.outputPath));
+
+      const references = await tx
+        .select({ id: backupJobs.id, jobType: backupJobs.jobType, status: backupJobs.status })
+        .from(backupJobs)
+        .where(eq(backupJobs.outputPath, job.outputPath));
+      const activeRef = references.some(
+        (r) => r.id !== job.id && (r.status === "running" || r.status === "pending"),
+      );
+      if (activeRef) {
+        return { ok: false as const, error: "لا يمكن حذف نسخة احتياطية قيد الاستعادة حالياً" };
+      }
+
+      if (isDatabaseBackupPath(job.outputPath)) {
+        const archiveId = job.outputPath.slice("db-backup:".length);
+        const sharedWithOtherBackup = references.some(
+          (r) => r.id !== job.id && r.jobType === "backup",
+        );
+        if (archiveId && !sharedWithOtherBackup) {
+          // Conditional delete: refuses if a reference appeared concurrently.
+          await tx.execute(sql`
+            DELETE FROM backup_archives
+            WHERE id = ${archiveId}
+              AND NOT EXISTS (
+                SELECT 1 FROM backup_jobs
+                WHERE output_path = ${job.outputPath}
+                  AND id <> ${job.id}
+                  AND (status IN ('running', 'pending') OR job_type = 'backup')
+              )
+          `);
+        }
+      } else if (isLocalPath(job.outputPath)) {
+        const localFilePath = resolveLocalPath(job.outputPath);
+        try {
+          if (fs.existsSync(localFilePath)) fs.unlinkSync(localFilePath);
+        } catch (err) {
+          console.warn(`Could not delete local backup file ${localFilePath}:`, err);
+        }
+      }
+      // Legacy object-storage paths: only the job record is removed.
+    }
+
+    await tx.delete(backupJobs).where(eq(backupJobs.id, jobId));
+    return { ok: true as const };
+  });
+}
+
+// Conditionally deletes one archive inside a transaction, holding the archive
+// advisory lock. Refuses when any backup job owns it, or any pending/running
+// job (other than excludeJobId) uses it. Returns true when deleted.
+async function deleteArchiveIfUnreferenced(
+  archiveId: string,
+  excludeJobId: number | null,
+): Promise<boolean> {
+  const backupPath = `db-backup:${archiveId}`;
+  return db.transaction(async (tx) => {
+    await tx.execute(archiveLockSql(backupPath));
+    const result = await tx.execute(sql`
+      DELETE FROM backup_archives
+      WHERE id = ${archiveId}
+        AND NOT EXISTS (
+          SELECT 1 FROM backup_jobs
+          WHERE output_path = ${backupPath}
+            AND (${excludeJobId === null ? sql`TRUE` : sql`id <> ${excludeJobId}`})
+            AND (status IN ('running', 'pending') OR job_type = 'backup')
+        )
+      RETURNING id
+    `);
+    const rows = (result as unknown as { rows?: unknown[] }).rows ?? [];
+    return rows.length > 0;
+  });
+}
+
+async function cleanupConsumedUploadedArchive(
+  backupPath: string,
+  restoreJobId: number,
+): Promise<void> {
+  if (!isDatabaseBackupPath(backupPath)) return;
+  const archiveId = backupPath.slice("db-backup:".length);
+  if (!archiveId) return;
+
+  const deleted = await deleteArchiveIfUnreferenced(archiveId, restoreJobId);
+  if (deleted) {
+    console.log(`[Restore] Deleted consumed uploaded archive ${archiveId}`);
+  }
+}
+
+export async function cleanupOrphanedUploadedArchives(): Promise<number> {
+  const cutoff = new Date(Date.now() - ORPHANED_UPLOAD_MAX_AGE_MS);
+  const archives = await db
+    .select({ id: backupArchives.id, createdAt: backupArchives.createdAt })
+    .from(backupArchives);
+
+  let deleted = 0;
+  for (const archive of archives) {
+    if (new Date(archive.createdAt) >= cutoff) continue; // grace period
+    if (await deleteArchiveIfUnreferenced(archive.id, null)) deleted++;
+  }
+  if (deleted > 0) {
+    console.log(`[Retention] Deleted ${deleted} orphaned uploaded archive(s)`);
+  }
+  return deleted;
+}
+
+const ORPHANED_UPLOAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
