@@ -7,6 +7,7 @@ import {
   normalizeLegacyObjectStoragePath,
   PG_DUMP_EXCLUDED_TABLES,
   preprocessSqlForRestore,
+  readZipBufferRange,
   readZipBuffer,
   RESTORE_PRESERVED_TABLES,
   validateBackupZip,
@@ -41,6 +42,23 @@ test("readZipBuffer keeps read-only support for legacy local backups", async () 
   try {
     const actual = await readZipBuffer(`local:${relativePath}`);
     assert.deepEqual(actual, expected);
+  } finally {
+    fs.rmSync(absolutePath, { force: true });
+  }
+});
+
+test("readZipBufferRange returns an exact byte range for legacy local backups", async () => {
+  const relativePath = `uploads/backups/range-test-${process.pid}.zip`;
+  const absolutePath = path.join(process.cwd(), relativePath);
+  const expected = Buffer.from("0123456789");
+
+  fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+  fs.writeFileSync(absolutePath, expected);
+
+  try {
+    const result = await readZipBufferRange(`local:${relativePath}`, 2, 6);
+    assert.equal(result.totalSize, expected.length);
+    assert.equal(result.buffer.toString(), "23456");
   } finally {
     fs.rmSync(absolutePath, { force: true });
   }

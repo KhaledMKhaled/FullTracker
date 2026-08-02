@@ -5,7 +5,7 @@ import path from "path";
 import archiver from "archiver";
 import AdmZip from "adm-zip";
 import { PassThrough } from "stream";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   backupArchives,
@@ -124,6 +124,51 @@ export async function readZipBuffer(backupPath: string): Promise<Buffer> {
     return fs.readFileSync(localFilePath);
   }
   return objectStorage.downloadObjectToBuffer(normalizeLegacyObjectStoragePath(backupPath));
+}
+
+export async function readZipBufferRange(
+  backupPath: string,
+  start: number,
+  endInclusive: number,
+): Promise<{ buffer: Buffer; totalSize: number }> {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(endInclusive) || start < 0 || endInclusive < start) {
+    throw new Error("Invalid backup byte range");
+  }
+
+  if (isDatabaseBackupPath(backupPath)) {
+    const archiveId = backupPath.slice("db-backup:".length);
+    if (!archiveId) {
+      throw new Error("Invalid database backup path");
+    }
+
+    const requestedLength = endInclusive - start + 1;
+    const [archive] = await db
+      .select({
+        data: sql<Buffer>`substring(${backupArchives.data} from ${start + 1} for ${requestedLength})`,
+        totalSize: backupArchives.size,
+      })
+      .from(backupArchives)
+      .where(eq(backupArchives.id, archiveId))
+      .limit(1);
+
+    if (!archive) {
+      throw new Error(`Backup archive not found in the database: ${archiveId}`);
+    }
+
+    return {
+      buffer: archive.data,
+      totalSize: archive.totalSize,
+    };
+  }
+
+  // Legacy archives are already constrained by their old storage backends.
+  // Keep them readable and slice after loading, while new DB archives are read
+  // directly from PostgreSQL in bounded chunks.
+  const fullBuffer = await readZipBuffer(backupPath);
+  return {
+    buffer: fullBuffer.subarray(start, Math.min(endInclusive + 1, fullBuffer.length)),
+    totalSize: fullBuffer.length,
+  };
 }
 
 interface BackupManifest {

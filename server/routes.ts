@@ -12,6 +12,7 @@ import {
   getBackupJobs,
   getBackupJob,
   readZipBuffer,
+  readZipBufferRange,
   saveZipBuffer,
   validateBackupZip,
 } from "./backupService";
@@ -2614,16 +2615,50 @@ export async function registerRoutes(
         return res.status(404).json({ message: "النسخة الاحتياطية غير متوفرة" });
       }
       
-      const buffer = await readZipBuffer(job.outputPath);
-      
       const filename = `backup-${job.id}-${new Date(job.createdAt).toISOString().split("T")[0]}.zip`;
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Accept-Ranges", "bytes");
+      res.setHeader("Cache-Control", "private, no-store");
+
+      const rangeHeader = req.headers.range;
+      if (!rangeHeader) {
+        const buffer = await readZipBuffer(job.outputPath);
+        res.setHeader("Content-Length", buffer.length);
+        return res.send(buffer);
+      }
+
+      const match = /^bytes=(\d+)-(\d+)$/.exec(rangeHeader);
+      if (!match) {
+        return res.status(416).json({ message: "نطاق التحميل غير صالح" });
+      }
+
+      const start = Number(match[1]);
+      const requestedEnd = Number(match[2]);
+      if (!Number.isSafeInteger(start) || !Number.isSafeInteger(requestedEnd) || start < 0 || requestedEnd < start) {
+        return res.status(416).json({ message: "نطاق التحميل غير صالح" });
+      }
+
+      const knownSize = job.fileSize ?? Number.MAX_SAFE_INTEGER;
+      if (start >= knownSize) {
+        res.setHeader("Content-Range", `bytes */${knownSize}`);
+        return res.status(416).end();
+      }
+
+      const end = Math.min(requestedEnd, knownSize - 1);
+      const { buffer, totalSize } = await readZipBufferRange(job.outputPath, start, end);
+      const actualEnd = start + buffer.length - 1;
+
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${actualEnd}/${totalSize}`);
       res.setHeader("Content-Length", buffer.length);
-      res.send(buffer);
+      return res.send(buffer);
     } catch (error) {
       console.error("Error downloading backup:", error);
-      res.status(500).json({ message: "فشل في تحميل النسخة الاحتياطية" });
+      if (!res.headersSent) {
+        return res.status(500).json({ message: "فشل في تحميل النسخة الاحتياطية" });
+      }
+      res.destroy(error instanceof Error ? error : undefined);
     }
   });
 

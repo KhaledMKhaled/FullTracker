@@ -278,23 +278,59 @@ export default function BackupPage() {
 
   const handleDownload = async (jobId: number) => {
     try {
-      const response = await fetch(`/api/backup/download/${jobId}`, {
-        credentials: "include",
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.message || "فشل في تحميل النسخة الاحتياطية");
+      const job = jobs?.find((candidate) => candidate.id === jobId);
+      const totalSize = job?.fileSize;
+      if (!totalSize || totalSize <= 0) {
+        throw new Error("حجم النسخة الاحتياطية غير متوفر");
       }
-      
-      const blob = await response.blob();
+
+      const chunkSize = 8 * 1024 * 1024;
+      const chunks: BlobPart[] = [];
+      let filename = `backup-${jobId}.zip`;
+
+      for (let start = 0; start < totalSize; start += chunkSize) {
+        const end = Math.min(start + chunkSize - 1, totalSize - 1);
+        const response = await fetch(`/api/backup/download/${jobId}`, {
+          credentials: "include",
+          headers: {
+            Range: `bytes=${start}-${end}`,
+          },
+        });
+
+        if (!response.ok || response.status !== 206) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || "فشل في تحميل جزء من النسخة الاحتياطية");
+        }
+
+        const contentRange = response.headers.get("Content-Range");
+        const expectedContentRange = `bytes ${start}-${end}/${totalSize}`;
+        if (contentRange !== expectedContentRange) {
+          throw new Error("تعذر التحقق من اكتمال جزء النسخة الاحتياطية");
+        }
+
+        const chunk = await response.blob();
+        const expectedLength = end - start + 1;
+        if (chunk.size !== expectedLength) {
+          throw new Error("تم استلام جزء غير مكتمل من النسخة الاحتياطية");
+        }
+        chunks.push(chunk);
+
+        if (start === 0) {
+          const contentDisposition = response.headers.get("Content-Disposition");
+          const filenameMatch = contentDisposition?.match(/filename="([^"]+)"/);
+          if (filenameMatch) filename = filenameMatch[1];
+        }
+      }
+
+      const blob = new Blob(chunks, { type: "application/zip" });
+      if (blob.size !== totalSize) {
+        throw new Error("لم يكتمل تحميل النسخة الاحتياطية");
+      }
+
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      
-      const contentDisposition = response.headers.get("Content-Disposition");
-      const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
-      link.download = filenameMatch ? filenameMatch[1] : `backup-${jobId}.zip`;
+      link.download = filename;
       
       document.body.appendChild(link);
       link.click();
