@@ -271,7 +271,9 @@ export const backupJobs = pgTable("backup_jobs", {
   fileSize: integer("file_size"),
   error: text("error"),
   manifest: jsonb("manifest"),
-  createdByUserId: varchar("created_by_user_id").references(() => users.id),
+  // Keep backup history even if the user who started it is later removed or a
+  // restore replaces the users table. This intentionally has no database FK.
+  createdByUserId: varchar("created_by_user_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   completedAt: timestamp("completed_at"),
 });
