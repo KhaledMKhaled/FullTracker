@@ -452,6 +452,7 @@ export const parties = pgTable("parties", {
   nextCollectionDate: date("next_collection_date"),
   nextCollectionAmountEgp: decimal("next_collection_amount_egp", { precision: 15, scale: 2 }),
   nextCollectionNote: text("next_collection_note"),
+  commissionEligible: boolean("commission_eligible").default(true).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -466,6 +467,21 @@ export const partySeasons = pgTable("party_seasons", {
   endedAt: timestamp("ended_at"),
   isCurrent: boolean("is_current").default(true).notNull(),
   openingBalanceEgp: decimal("opening_balance_egp", { precision: 15, scale: 2 }).default("0").notNull(),
+  openingBalanceDirection: varchar("opening_balance_direction", { length: 20 }).default("debit").notNull(),
+  archivedAt: timestamp("archived_at"),
+  archivedByUserId: varchar("archived_by_user_id"),
+  carryOverBalance: boolean("carry_over_balance").default(false).notNull(),
+  closingBalanceEgp: decimal("closing_balance_egp", { precision: 15, scale: 2 }),
+  closingBalanceDirection: varchar("closing_balance_direction", { length: 20 }),
+  totalSalesEgp: decimal("total_sales_egp", { precision: 15, scale: 2 }),
+  totalPurchasesEgp: decimal("total_purchases_egp", { precision: 15, scale: 2 }),
+  totalPaymentsInEgp: decimal("total_payments_in_egp", { precision: 15, scale: 2 }),
+  totalPaymentsOutEgp: decimal("total_payments_out_egp", { precision: 15, scale: 2 }),
+  totalCommissionsEgp: decimal("total_commissions_egp", { precision: 15, scale: 2 }),
+  totalReturnsValueEgp: decimal("total_returns_value_egp", { precision: 15, scale: 2 }),
+  invoicesCount: integer("invoices_count"),
+  paymentsCount: integer("payments_count"),
+  archiveNotes: text("archive_notes"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -473,6 +489,7 @@ export const partySeasons = pgTable("party_seasons", {
 export const partyCollections = pgTable("party_collections", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   partyId: integer("party_id").references(() => parties.id).notNull(),
+  seasonId: integer("season_id"),
   collectionOrder: integer("collection_order").notNull(), // 1, 2, 3, or 4
   collectionDate: date("collection_date").notNull(),
   amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }),
@@ -498,6 +515,10 @@ export const localInvoices = pgTable("local_invoices", {
   referenceNumber: varchar("reference_number", { length: 50 }).unique().notNull(),
   totalCartons: integer("total_cartons").default(0).notNull(),
   totalPieces: integer("total_pieces").default(0).notNull(),
+  affectsInventory: boolean("affects_inventory").default(true).notNull(),
+  commissionType: varchar("commission_type", { length: 20 }),
+  commissionValue: decimal("commission_value", { precision: 15, scale: 2 }),
+  commissionAmountEgp: decimal("commission_amount_egp", { precision: 15, scale: 2 }),
   subtotalEgp: decimal("subtotal_egp", { precision: 15, scale: 2 }).default("0").notNull(),
   totalEgp: decimal("total_egp", { precision: 15, scale: 2 }).default("0").notNull(),
   notes: text("notes"),
@@ -519,6 +540,7 @@ export const localInvoiceLines = pgTable("local_invoice_lines", {
   receivedPieces: integer("received_pieces"), // null = not received yet, number = actual received quantity
   unitMode: varchar("unit_mode", { length: 20 }).default("piece").notNull(), // 'piece' | 'dozen'
   unitPriceEgp: decimal("unit_price_egp", { precision: 10, scale: 2 }).default("0").notNull(),
+  commissionPerUnitEgp: decimal("commission_per_unit_egp", { precision: 15, scale: 2 }),
   totalDozens: decimal("total_dozens", { precision: 10, scale: 2 }).default("0"),
   lineTotalEgp: decimal("line_total_egp", { precision: 15, scale: 2 }).default("0").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -548,6 +570,9 @@ export const partyLedgerEntries = pgTable("party_ledger_entries", {
   amountEgp: decimal("amount_egp", { precision: 15, scale: 2 }).notNull(),
   runningBalanceEgp: decimal("running_balance_egp", { precision: 15, scale: 2 }),
   note: text("note"),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelledByUserId: varchar("cancelled_by_user_id"),
   createdByUserId: varchar("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -570,6 +595,10 @@ export const localPayments = pgTable("local_payments", {
   attachmentMimeType: varchar("attachment_mime_type", { length: 255 }),
   attachmentSize: integer("attachment_size"),
   attachmentOriginalName: varchar("attachment_original_name", { length: 255 }),
+  status: varchar("status", { length: 20 }).default("active").notNull(),
+  cancelledAt: timestamp("cancelled_at"),
+  cancelledByUserId: varchar("cancelled_by_user_id"),
+  cancellationReason: text("cancellation_reason"),
   createdByUserId: varchar("created_by_user_id").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
 });
