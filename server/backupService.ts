@@ -132,7 +132,8 @@ async function runPgDump(): Promise<string> {
     `--exclude-table='replit_*' ` +
     `--exclude-table='public.replit_*' ` +
     `--exclude-table='sessions' ` +
-    `--exclude-table='public.sessions'`
+    `--exclude-table='public.sessions'`,
+    { maxBuffer: 512 * 1024 * 1024 }
   );
   return stdout;
 }
@@ -587,6 +588,12 @@ export async function startRestore(userId: string, backupPath: string): Promise<
 
       const sqlContent = databaseEntry.getData().toString("utf-8");
       await runPsqlRestore(sqlContent);
+      // Older backups do not contain tables introduced in newer app versions.
+      // Reapply the current Drizzle schema before accepting new requests.
+      await execAsync("npm run db:push -- --force", {
+        cwd: process.cwd(),
+        maxBuffer: 10 * 1024 * 1024,
+      });
       await updateJobProgress(job.id, 50);
 
       const mediaEntries = zipEntries.filter((e) => e.entryName.startsWith("media/") && !e.isDirectory);

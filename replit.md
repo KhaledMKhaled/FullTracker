@@ -26,7 +26,7 @@ The application is built as a full-stack web application with a clear separation
 - **Inventory Management**: Tracks product movements and calculates per-piece costs, including purchase, shipping, customs, and clearance shares.
 - **Payment Management**: Supports various payment methods, tracks overpayments, and allows for supplier attribution, including FIFO auto-settlement for local trade payments.
 - **Reporting & Accounting**: Includes an accounting dashboard, supplier balances, movement reports, and payment method reports with CSV/Excel export capabilities, and redesigned comprehensive account statements.
-- **Data Persistence**: Utilizes Replit Object Storage for persistent storage of item images and payment attachments.
+- **Data Persistence**: Shipment item images are stored durably in PostgreSQL so they survive Autoscale restarts and publishes. Legacy item images and other attachments remain readable from their existing paths.
 - **Backup and Restore**: Admin-only feature for comprehensive system backup (database, media files) and restore functionality.
 - **Local Trade Module (التجارة المحلية)**: Comprehensive EGP-only module for managing local merchants (تاجر) and customers (عميل). Features include:
   - Party management with contact info, payment terms, credit limits, and "both" (مزدوج) party type.
@@ -56,5 +56,5 @@ The application is built as a full-stack web application with a clear separation
 ## External Dependencies
 - **Passport.js**: Local username/password authentication. Sessions stored in PostgreSQL via `connect-pg-simple`.
 - **Neon**: Managed PostgreSQL database service.
-- **Replit Object Storage**: For persistent storage of uploaded images and attachments (e.g., item images, payment attachments).
+- **PostgreSQL Media Assets**: Durable storage for newly uploaded shipment item images. Existing legacy uploads remain supported for backward compatibility.
 - **html2canvas & jsPDF**: Used for generating PDF exports of shipment summaries and account statements.

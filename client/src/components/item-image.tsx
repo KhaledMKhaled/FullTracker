@@ -24,7 +24,7 @@ export function ItemImage({ src, alt = "صورة البند", size = "md", class
     return (
       <div 
         className={`${sizeClass} bg-muted rounded-md flex items-center justify-center flex-shrink-0 ${className}`}
-        title={hasError ? "الصورة غير متاحة" : "لا توجد صورة"}
+        title={hasError ? "الصورة غير متاحة — أعد رفعها لتثبيتها" : "لا توجد صورة"}
       >
         {hasError ? (
           <ImageOff className="w-5 h-5 text-muted-foreground" />

@@ -25,27 +25,15 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { randomUUID } from "crypto";
 import { ZodError } from "zod";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
-
-// Configure multer for item image uploads
-const itemImageStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    const uploadDir = "uploads/items";
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    cb(null, uploadDir);
-  },
-  filename: (_req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    const ext = path.extname(file.originalname);
-    cb(null, `item-${uniqueSuffix}${ext}`);
-  },
-});
+import { db } from "./db";
+import { mediaAssets } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const uploadItemImage = multer({
-  storage: itemImageStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
   fileFilter: (_req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
@@ -58,6 +46,30 @@ const uploadItemImage = multer({
     }
   },
 });
+
+function detectImageContentType(buffer: Buffer): string | null {
+  if (
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return "image/png";
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (buffer.length >= 6) {
+    const signature = buffer.subarray(0, 6).toString("ascii");
+    if (signature === "GIF87a" || signature === "GIF89a") return "image/gif";
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+    buffer.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
 
 const MAX_PAYMENT_ATTACHMENT_SIZE = 2 * 1024 * 1024;
 
@@ -729,17 +741,61 @@ export async function registerRoutes(
     }
   });
 
-  // Legacy image upload for items (fallback - still works but uses local storage)
-  app.post("/api/upload/item-image", isAuthenticated, uploadItemImage.single("image"), (req, res) => {
+  // Durable item-image upload. Keep this endpoint stable for the shipment wizard,
+  // but persist bytes in PostgreSQL because Autoscale filesystems are ephemeral.
+  app.post("/api/upload/item-image", requireRole(["مدير", "محاسب"]), uploadItemImage.single("image"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "لم يتم رفع صورة" });
       }
-      const imageUrl = `/uploads/items/${req.file.filename}`;
+
+      const verifiedContentType = detectImageContentType(req.file.buffer);
+      if (!verifiedContentType) {
+        return res.status(400).json({ message: "محتوى الملف ليس صورة مدعومة" });
+      }
+
+      const assetId = randomUUID();
+      await db.insert(mediaAssets).values({
+        id: assetId,
+        category: "shipment-item",
+        contentType: verifiedContentType,
+        originalName: req.file.originalname,
+        size: req.file.size,
+        data: req.file.buffer,
+      });
+
+      const imageUrl = `/media/${assetId}`;
       res.json({ imageUrl });
     } catch (error) {
       console.error("Error uploading image:", error);
       res.status(500).json({ message: "خطأ في رفع الصورة" });
+    }
+  });
+
+  // Serve durable media stored in PostgreSQL. Asset IDs are random UUIDs and
+  // responses are immutable, allowing browsers/CDNs to cache them safely.
+  app.get("/media/:assetId", async (req, res) => {
+    try {
+      const [asset] = await db
+        .select()
+        .from(mediaAssets)
+        .where(eq(mediaAssets.id, req.params.assetId))
+        .limit(1);
+
+      if (!asset) {
+        return res.status(404).json({ message: "الصورة غير موجودة" });
+      }
+
+      res.set({
+        "Content-Type": asset.contentType,
+        "Content-Length": String(asset.size),
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
+      });
+      return res.send(asset.data);
+    } catch (error) {
+      console.error("Error serving media asset:", error);
+      return res.status(500).json({ message: "خطأ في عرض الصورة" });
     }
   });
 

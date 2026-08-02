@@ -11,6 +11,7 @@ import {
   decimal,
   boolean,
   date,
+  customType,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -36,6 +37,24 @@ export const users = pgTable("users", {
   role: varchar("role").default("مشاهد").notNull(), // مدير, محاسب, مسؤول مخزون, مشاهد
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
+
+// Durable binary media storage. Autoscale filesystems are ephemeral, so item
+// images must not be stored under uploads/ in production.
+export const mediaAssets = pgTable("media_assets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  category: varchar("category", { length: 50 }).notNull(),
+  contentType: varchar("content_type", { length: 100 }).notNull(),
+  originalName: varchar("original_name", { length: 255 }),
+  size: integer("size").notNull(),
+  data: bytea("data").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Suppliers table (الموردون)

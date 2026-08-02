@@ -1236,15 +1236,44 @@ function Step1Import({
                   <div className="flex items-center gap-3">
                     <Label className="whitespace-nowrap">صورة البند:</Label>
                     {item.imageUrl ? (
-                      <div className="relative group">
-                        <ItemImage src={item.imageUrl} alt={item.productName || "صورة البند"} size="lg" />
-                        <button
-                          type="button"
-                          onClick={() => removeItemImage(actualIndex)}
-                          className="absolute -top-2 -left-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                      <div className="flex items-center gap-2">
+                        <div className="relative group">
+                          <ItemImage src={item.imageUrl} alt={item.productName || "صورة البند"} size="lg" />
+                          <button
+                            type="button"
+                            onClick={() => removeItemImage(actualIndex)}
+                            className="absolute -top-2 -left-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        {item.imageUrl.startsWith("/uploads/") && (
+                          <label className="cursor-pointer">
+                            <div className="flex items-center gap-2 px-3 py-2 border border-dashed rounded-md hover:bg-muted/50 transition-colors">
+                              {uploadingImage === actualIndex ? (
+                                <span className="text-sm text-muted-foreground">جاري التثبيت...</span>
+                              ) : (
+                                <>
+                                  <Upload className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-sm text-muted-foreground">تثبيت/إعادة رفع الصورة</span>
+                                </>
+                              )}
+                            </div>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  handleImageUpload(actualIndex, file);
+                                }
+                                e.target.value = "";
+                              }}
+                              disabled={uploadingImage !== null}
+                            />
+                          </label>
+                        )}
                       </div>
                     ) : (
                       <label className="cursor-pointer">

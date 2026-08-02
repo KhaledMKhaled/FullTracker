@@ -1,2 +1,2 @@
-- [Media on local disk](media-local-disk.md) — Object Storage unconfigured; all images live under uploads/, legacy /objects/ URLs were migrated; Arabic filenames need RFC 5987 headers.
+- [Durable media storage](media-local-disk.md) — shipment-item images must use PostgreSQL media assets; never local uploads on Autoscale. Other attachment types still need migration.
 - [Restore can orphan FK rows](restore-orphan-fk.md) — db:push FK violations after backup/restore mean orphaned rows (e.g. backup_jobs → deleted user); repoint or delete, then re-push.
