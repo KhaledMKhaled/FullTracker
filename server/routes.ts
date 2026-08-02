@@ -6,7 +6,15 @@ import { normalizePaymentAmounts } from "./services/currency";
 import { logAuditEvent } from "./audit";
 import { getPaymentsWithShipments } from "./payments";
 import { createShipmentWithItems, updateShipmentWithItems, updateMissingPieces } from "./shipmentService";
-import { startBackup, startRestore, getBackupJobs, getBackupJob, validateBackupZip } from "./backupService";
+import {
+  startBackup,
+  startRestore,
+  getBackupJobs,
+  getBackupJob,
+  readZipBuffer,
+  saveZipBuffer,
+  validateBackupZip,
+} from "./backupService";
 import { ApiError, formatError, success } from "./errors";
 import type { User } from "@shared/schema";
 import {
@@ -2606,24 +2614,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "النسخة الاحتياطية غير متوفرة" });
       }
       
-      let buffer: Buffer;
-      
-      if (job.outputPath.startsWith("local:")) {
-        // Local disk backup
-        const localFilePath = path.join(process.cwd(), job.outputPath.replace(/^local:/, ""));
-        if (!fs.existsSync(localFilePath)) {
-          return res.status(404).json({ message: "ملف النسخة الاحتياطية غير موجود على القرص" });
-        }
-        buffer = fs.readFileSync(localFilePath);
-      } else {
-        // Object Storage backup
-        const objectStorage = new ObjectStorageService();
-        const objectPath = job.outputPath.replace("/objects/", "");
-        buffer = await objectStorage.downloadObjectToBuffer(objectPath);
-        if (!buffer) {
-          return res.status(404).json({ message: "ملف النسخة الاحتياطية غير موجود" });
-        }
-      }
+      const buffer = await readZipBuffer(job.outputPath);
       
       const filename = `backup-${job.id}-${new Date(job.createdAt).toISOString().split("T")[0]}.zip`;
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
@@ -2655,25 +2646,8 @@ export async function registerRoutes(
       }
       
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      let backupPath: string;
-
-      // Try Object Storage first; fall back to local disk if not configured
-      try {
-        const objectStorage = new ObjectStorageService();
-        const { bucketName } = objectStorage.getBucketAndPrefix();
-        backupPath = `/${bucketName}/backups/uploaded-${timestamp}.zip`;
-        await objectStorage.uploadObjectFromBuffer(backupPath, file.buffer, "application/zip");
-        console.log("[backup/upload] Saved to Object Storage:", backupPath);
-      } catch (storageErr) {
-        console.warn("[backup/upload] Object Storage unavailable, falling back to local disk:", storageErr);
-        const localDir = path.join(process.cwd(), "uploads", "backups");
-        if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
-        const localFileName = `uploaded-${timestamp}.zip`;
-        const localFilePath = path.join(localDir, localFileName);
-        fs.writeFileSync(localFilePath, file.buffer);
-        backupPath = `local:uploads/backups/${localFileName}`;
-        console.log("[backup/upload] Saved to local disk:", localFilePath);
-      }
+      const backupPath = await saveZipBuffer(file.buffer, `uploaded-${timestamp}.zip`);
+      console.log("[backup/upload] Saved durably in PostgreSQL:", backupPath);
       
       auditLogger({
         userId,

@@ -1,2 +1,3 @@
 - [Durable media storage](media-local-disk.md) — shipment-item images must use PostgreSQL media assets; never local uploads on Autoscale. Other attachment types still need migration.
+- [Durable backup archives](backup-archive-storage.md) — store ZIPs in PostgreSQL, exclude them from dumps, and preserve them throughout restore.
 - [Restore can orphan FK rows](restore-orphan-fk.md) — db:push FK violations after backup/restore mean orphaned rows (e.g. backup_jobs → deleted user); repoint or delete, then re-push.

@@ -7,7 +7,12 @@ import AdmZip from "adm-zip";
 import { PassThrough } from "stream";
 import { eq, desc } from "drizzle-orm";
 import { db } from "./db";
-import { backupJobs, type BackupJob, type InsertBackupJob } from "@shared/schema";
+import {
+  backupArchives,
+  backupJobs,
+  type BackupJob,
+  type InsertBackupJob,
+} from "@shared/schema";
 import { ObjectStorageService } from "./replit_integrations/object_storage/objectStorage";
 
 const execAsync = promisify(exec);
@@ -39,38 +44,78 @@ function getPsqlPath(): string {
 
 const objectStorage = new ObjectStorageService();
 
-const LOCAL_BACKUP_DIR = path.join(process.cwd(), "uploads", "backups");
+export const PG_DUMP_EXCLUDED_TABLES = [
+  "replit_*",
+  "public.replit_*",
+  "sessions",
+  "public.sessions",
+  "backup_archives",
+  "public.backup_archives",
+] as const;
+
+export const RESTORE_PRESERVED_TABLES = [
+  "sessions",
+  "backup_jobs",
+  "backup_archives",
+] as const;
 
 function isLocalPath(backupPath: string): boolean {
   return backupPath.startsWith("local:");
+}
+
+function isDatabaseBackupPath(backupPath: string): boolean {
+  return backupPath.startsWith("db-backup:");
 }
 
 function resolveLocalPath(backupPath: string): string {
   return path.join(process.cwd(), backupPath.replace(/^local:/, ""));
 }
 
-function saveZipBufferLocally(zipBuffer: Buffer, localFileName: string): string {
-  if (!fs.existsSync(LOCAL_BACKUP_DIR)) fs.mkdirSync(LOCAL_BACKUP_DIR, { recursive: true });
-  const localFilePath = path.join(LOCAL_BACKUP_DIR, localFileName);
-  fs.writeFileSync(localFilePath, zipBuffer);
-  return `local:uploads/backups/${localFileName}`;
+export function normalizeLegacyObjectStoragePath(backupPath: string): string {
+  return backupPath.startsWith("/objects/")
+    ? backupPath.slice("/objects/".length)
+    : backupPath;
 }
 
-async function saveZipBuffer(zipBuffer: Buffer, remotePath: string | null, localFileName: string): Promise<string> {
-  if (!remotePath) {
-    console.log("[backupService] Object Storage not configured, saving backup to local disk");
-    return saveZipBufferLocally(zipBuffer, localFileName);
+export async function saveZipBuffer(zipBuffer: Buffer, fileName: string): Promise<string> {
+  const [archive] = await db
+    .insert(backupArchives)
+    .values({
+      fileName,
+      contentType: "application/zip",
+      size: zipBuffer.length,
+      data: zipBuffer,
+    })
+    .returning({ id: backupArchives.id });
+
+  if (!archive) {
+    throw new Error("Failed to save backup archive in the database");
   }
-  try {
-    await objectStorage.uploadObjectFromBuffer(remotePath, zipBuffer, "application/zip");
-    return remotePath;
-  } catch (err) {
-    console.warn("[backupService] Object Storage unavailable, saving to local disk:", err);
-    return saveZipBufferLocally(zipBuffer, localFileName);
-  }
+
+  return `db-backup:${archive.id}`;
 }
 
-async function readZipBuffer(backupPath: string): Promise<Buffer> {
+export async function readZipBuffer(backupPath: string): Promise<Buffer> {
+  if (isDatabaseBackupPath(backupPath)) {
+    const archiveId = backupPath.slice("db-backup:".length);
+    if (!archiveId) {
+      throw new Error("Invalid database backup path");
+    }
+
+    const [archive] = await db
+      .select({ data: backupArchives.data })
+      .from(backupArchives)
+      .where(eq(backupArchives.id, archiveId))
+      .limit(1);
+
+    if (!archive) {
+      throw new Error(`Backup archive not found in the database: ${archiveId}`);
+    }
+
+    return archive.data;
+  }
+
+  // Legacy read-only support for backups created before durable DB storage.
   if (isLocalPath(backupPath)) {
     const localFilePath = resolveLocalPath(backupPath);
     if (!fs.existsSync(localFilePath)) {
@@ -78,7 +123,7 @@ async function readZipBuffer(backupPath: string): Promise<Buffer> {
     }
     return fs.readFileSync(localFilePath);
   }
-  return objectStorage.downloadObjectToBuffer(backupPath);
+  return objectStorage.downloadObjectToBuffer(normalizeLegacyObjectStoragePath(backupPath));
 }
 
 interface BackupManifest {
@@ -126,19 +171,18 @@ async function runPgDump(): Promise<string> {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is not set");
   }
+  const excludedTableArgs = PG_DUMP_EXCLUDED_TABLES
+    .map((table) => `--exclude-table='${table}'`)
+    .join(" ");
   const { stdout } = await execAsync(
     `${getPgDumpPath()} "${databaseUrl}" --format=plain --no-owner --no-acl ` +
-    `--exclude-schema=_system ` +
-    `--exclude-table='replit_*' ` +
-    `--exclude-table='public.replit_*' ` +
-    `--exclude-table='sessions' ` +
-    `--exclude-table='public.sessions'`,
+    `--exclude-schema=_system ${excludedTableArgs}`,
     { maxBuffer: 512 * 1024 * 1024 }
   );
   return stdout;
 }
 
-function preprocessSqlForRestore(sqlContent: string): string {
+export function preprocessSqlForRestore(sqlContent: string): string {
   const lines = sqlContent.split("\n");
   const filteredLines: string[] = [];
   let skipMode: "none" | "until_semicolon" | "until_copy_end" = "none";
@@ -182,6 +226,20 @@ function preprocessSqlForRestore(sqlContent: string): string {
     /^CREATE\s+(UNIQUE\s+)?INDEX\s+.*backup_jobs/i,
     /^DROP\s+INDEX\s+.*backup_jobs/i,
     /^ALTER\s+INDEX\s+.*backup_jobs/i,
+    // Preserve durable backup archives so the ZIP being restored remains
+    // available throughout restore and so older archives are not destroyed.
+    /^CREATE TABLE\s+(public\.)?"?backup_archives"?/i,
+    /^ALTER TABLE\s+(ONLY\s+)?(public\.)?"?backup_archives"?/i,
+    /^COPY\s+(public\.)?"?backup_archives"?/i,
+    /^DROP TABLE\s+.*"?backup_archives"?/i,
+    /^TRUNCATE\s+.*"?backup_archives"?/i,
+    /^CREATE SEQUENCE\s+(public\.)?backup_archives/i,
+    /^ALTER SEQUENCE\s+(public\.)?backup_archives/i,
+    /^DROP SEQUENCE\s+.*backup_archives/i,
+    /^SELECT pg_catalog\.setval\('(public\.)?backup_archives/i,
+    /^CREATE\s+(UNIQUE\s+)?INDEX\s+.*backup_archives/i,
+    /^DROP\s+INDEX\s+.*backup_archives/i,
+    /^ALTER\s+INDEX\s+.*backup_archives/i,
   ];
   
   for (const line of lines) {
@@ -241,26 +299,42 @@ async function clearDatabaseTables(): Promise<void> {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL environment variable is not set");
   }
+
+  const preservedTablesSql = RESTORE_PRESERVED_TABLES
+    .map((table) => `'${table}'`)
+    .join(", ");
   
-  // Get all tables in public schema, excluding Replit internal tables, sessions (to preserve user login), and backup_jobs (to preserve job tracking)
+  // Preserve sessions, backup job tracking, and durable backup ZIP archives.
   const { stdout: tablesOutput } = await execAsync(
-    `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'replit_%' AND tablename NOT IN ('sessions', 'backup_jobs')"`
+    `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'replit_%' AND tablename NOT IN (${preservedTablesSql})"`
   );
   
   const tables = tablesOutput
     .split("\n")
     .map((t) => t.trim())
-    .filter((t) => t.length > 0 && t !== "sessions" && t !== "backup_jobs");
+    .filter(
+      (t) =>
+        t.length > 0 &&
+        !RESTORE_PRESERVED_TABLES.includes(
+          t as (typeof RESTORE_PRESERVED_TABLES)[number],
+        ),
+    );
   
   // Get all sequences in public schema, excluding Replit internal sequences, sessions-related sequences, and backup_jobs sequences
   const { stdout: seqOutput } = await execAsync(
-    `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' AND sequencename NOT LIKE 'replit_%' AND sequencename NOT LIKE 'sessions%' AND sequencename NOT LIKE 'backup_jobs%'"`
+    `${getPsqlPath()} "${databaseUrl}" -t -c "SELECT sequencename FROM pg_sequences WHERE schemaname = 'public' AND sequencename NOT LIKE 'replit_%' AND sequencename NOT LIKE 'sessions%' AND sequencename NOT LIKE 'backup_jobs%' AND sequencename NOT LIKE 'backup_archives%'"`
   );
   
   const sequences = seqOutput
     .split("\n")
     .map((s) => s.trim())
-    .filter((s) => s.length > 0 && !s.startsWith("sessions") && !s.startsWith("backup_jobs"));
+    .filter(
+      (s) =>
+        s.length > 0 &&
+        !s.startsWith("sessions") &&
+        !s.startsWith("backup_jobs") &&
+        !s.startsWith("backup_archives"),
+    );
   
   if (tables.length === 0 && sequences.length === 0) {
     return;
@@ -502,15 +576,7 @@ export async function startBackup(userId: string): Promise<BackupJob> {
       await updateJobProgress(job.id, 85);
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      let remotePath: string | null = null;
-      try {
-        const { bucketName } = objectStorage.getBucketAndPrefix();
-        remotePath = `/${bucketName}/backups/${timestamp}.zip`;
-      } catch {
-        remotePath = null;
-      }
-
-      const backupPath = await saveZipBuffer(zipBuffer, remotePath, `${timestamp}.zip`);
+      const backupPath = await saveZipBuffer(zipBuffer, `${timestamp}.zip`);
 
       await updateJobProgress(job.id, 95);
 

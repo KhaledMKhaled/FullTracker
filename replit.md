@@ -27,7 +27,7 @@ The application is built as a full-stack web application with a clear separation
 - **Payment Management**: Supports various payment methods, tracks overpayments, and allows for supplier attribution, including FIFO auto-settlement for local trade payments.
 - **Reporting & Accounting**: Includes an accounting dashboard, supplier balances, movement reports, and payment method reports with CSV/Excel export capabilities, and redesigned comprehensive account statements.
 - **Data Persistence**: Shipment item images are stored durably in PostgreSQL so they survive Autoscale restarts and publishes. Legacy item images and other attachments remain readable from their existing paths.
-- **Backup and Restore**: Admin-only feature for comprehensive system backup (database, media files) and restore functionality.
+- **Backup and Restore**: Admin-only comprehensive backup and restore. Backup ZIP archives are stored durably in PostgreSQL and excluded from their own database dumps to prevent recursive growth.
 - **Local Trade Module (التجارة المحلية)**: Comprehensive EGP-only module for managing local merchants (تاجر) and customers (عميل). Features include:
   - Party management with contact info, payment terms, credit limits, and "both" (مزدوج) party type.
   - Purchase and Sale invoices with a two-step workflow (create → receive) supporting per-line receiving, automatic margin/return case creation, and linked payment tracking (paid, partially paid, unpaid statuses).

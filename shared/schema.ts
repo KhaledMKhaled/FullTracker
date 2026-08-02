@@ -278,6 +278,17 @@ export const backupJobs = pgTable("backup_jobs", {
   completedAt: timestamp("completed_at"),
 });
 
+// Durable storage for backup ZIP archives. This table is intentionally excluded
+// from database dumps so backups never contain older backup archives.
+export const backupArchives = pgTable("backup_archives", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  contentType: varchar("content_type", { length: 100 }).notNull().default("application/zip"),
+  size: integer("size").notNull(),
+  data: bytea("data").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Audit Logs table (سجل التغييرات)
 export const auditLogs = pgTable("audit_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -814,6 +825,7 @@ export const insertPaymentAllocationSchema = createInsertSchema(paymentAllocatio
 export const insertInventoryMovementSchema = createInsertSchema(inventoryMovements).omit({ createdAt: true });
 export const insertAuditLogSchema = createInsertSchema(auditLogs);
 export const insertBackupJobSchema = createInsertSchema(backupJobs).omit({ createdAt: true });
+export const insertBackupArchiveSchema = createInsertSchema(backupArchives).omit({ createdAt: true });
 
 // Local Trade Insert Schemas
 export const insertPartySchema = createInsertSchema(parties).omit({ createdAt: true, updatedAt: true });
@@ -861,6 +873,8 @@ export type InsertAuditLog = z.infer<typeof insertAuditLogSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type InsertBackupJob = z.infer<typeof insertBackupJobSchema>;
 export type BackupJob = typeof backupJobs.$inferSelect;
+export type InsertBackupArchive = z.infer<typeof insertBackupArchiveSchema>;
+export type BackupArchive = typeof backupArchives.$inferSelect;
 
 // Local Trade Types
 export type InsertParty = z.infer<typeof insertPartySchema>;
