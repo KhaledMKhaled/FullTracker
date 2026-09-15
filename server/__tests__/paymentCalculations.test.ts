@@ -153,6 +153,181 @@ describe("calculatePaymentSnapshot", () => {
     assert.equal(snapshot.currencyAllowance.egp.remaining, 600);
   });
 
+  it("marks a shipment settled when every native-currency component is fully paid despite historical EGP conversion differences", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      purchaseCostRmb: "20000",
+      shippingCostRmb: "2592",
+      commissionCostRmb: "1000",
+      customsCostEgp: "66250",
+      takhreegCostEgp: "2500",
+      purchaseCostEgp: "154000",
+      shippingCostEgp: "20736",
+      commissionCostEgp: "8000",
+      finalTotalCostEgp: "251486",
+      totalPaidEgp: "251338",
+      balanceEgp: "148",
+      purchaseRmbToEgpRate: "7.70",
+    } as Shipment;
+
+    const payments: ShipmentPayment[] = [
+      createPayment({
+        paymentCurrency: "RMB",
+        costComponent: "تكلفة البضاعة",
+        amountOriginal: "20000",
+        exchangeRateToEgp: "7.75",
+        amountEgp: "155000",
+      }),
+      createPayment({
+        id: 2,
+        paymentCurrency: "RMB",
+        costComponent: "الشحن",
+        amountOriginal: "2592",
+        exchangeRateToEgp: "7.75",
+        amountEgp: "20088",
+      }),
+      createPayment({
+        id: 3,
+        paymentCurrency: "RMB",
+        costComponent: "العمولة",
+        amountOriginal: "1000",
+        exchangeRateToEgp: "7.50",
+        amountEgp: "7500",
+      }),
+      createPayment({
+        id: 4,
+        paymentCurrency: "EGP",
+        costComponent: "الجمرك",
+        amountOriginal: "66250",
+        amountEgp: "66250",
+      }),
+      createPayment({
+        id: 5,
+        paymentCurrency: "EGP",
+        costComponent: "التخريج",
+        amountOriginal: "2500",
+        amountEgp: "2500",
+      }),
+    ];
+
+    const snapshot = await calculatePaymentSnapshot({ shipment, payments });
+
+    assert.equal(snapshot.totalPaidEgp, 251338);
+    assert.equal(snapshot.remainingAllowed, 148);
+    assert.deepEqual(snapshot.settlement, {
+      status: "مسددة بالكامل",
+      settled: true,
+      remainingRmb: 0,
+      remainingEgp: 0,
+      displayRemainingEgp: 0,
+    });
+  });
+
+  it("does not let an overpayment on one component hide a balance on another", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      purchaseCostRmb: "1000",
+      shippingCostRmb: "200",
+      purchaseRmbToEgpRate: "7",
+    } as Shipment;
+    const payments: ShipmentPayment[] = [
+      createPayment({
+        paymentCurrency: "RMB",
+        costComponent: "تكلفة البضاعة",
+        amountOriginal: "1100",
+        exchangeRateToEgp: "7",
+        amountEgp: "7700",
+      }),
+      createPayment({
+        id: 2,
+        paymentCurrency: "RMB",
+        costComponent: "الشحن",
+        amountOriginal: "100",
+        exchangeRateToEgp: "7",
+        amountEgp: "700",
+      }),
+    ];
+
+    const snapshot = await calculatePaymentSnapshot({ shipment, payments });
+
+    assert.equal(snapshot.currencyAllowance.rmb.remaining, 0);
+    assert.equal(snapshot.settlement.status, "مدفوعة جزئياً");
+    assert.equal(snapshot.settlement.remainingRmb, 100);
+    assert.equal(snapshot.settlement.displayRemainingEgp, 700);
+  });
+
+  it("uses the historical EGP balance when only a final total is available", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      finalTotalCostEgp: "1000",
+      totalPaidEgp: "400",
+      balanceEgp: "600",
+    };
+
+    const snapshot = await calculatePaymentSnapshot({
+      shipment,
+      payments: [createPayment({ amountOriginal: "400", amountEgp: "400" })],
+    });
+
+    assert.equal(snapshot.settlement.status, "مدفوعة جزئياً");
+    assert.equal(snapshot.settlement.displayRemainingEgp, 600);
+  });
+
+  it("uses the historical EGP balance when an RMB component exists only as a converted value", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      shippingCostEgp: "700",
+      customsCostEgp: "100",
+      finalTotalCostEgp: "800",
+      totalPaidEgp: "100",
+      balanceEgp: "700",
+    };
+
+    const snapshot = await calculatePaymentSnapshot({
+      shipment,
+      payments: [
+        createPayment({
+          paymentCurrency: "EGP",
+          costComponent: "الجمرك",
+          amountOriginal: "100",
+          amountEgp: "100",
+        }),
+      ],
+    });
+
+    assert.equal(snapshot.settlement.status, "مدفوعة جزئياً");
+    assert.equal(snapshot.settlement.displayRemainingEgp, 700);
+  });
+
+  it("uses the adjusted historical total when missing-piece costs reduce the amount due", async () => {
+    const shipment: Shipment = {
+      ...baseShipment,
+      purchaseCostRmb: "100",
+      purchaseCostEgp: "700",
+      purchaseRmbToEgpRate: "7",
+      totalMissingCostEgp: "100",
+      finalTotalCostEgp: "600",
+      totalPaidEgp: "600",
+      balanceEgp: "0",
+    } as Shipment;
+
+    const snapshot = await calculatePaymentSnapshot({
+      shipment,
+      payments: [
+        createPayment({
+          paymentCurrency: "EGP",
+          costComponent: "تكلفة البضاعة",
+          amountOriginal: "600",
+          exchangeRateToEgp: "7",
+          amountEgp: "600",
+        }),
+      ],
+    });
+
+    assert.equal(snapshot.settlement.status, "مسددة بالكامل");
+    assert.equal(snapshot.settlement.displayRemainingEgp, 0);
+  });
+
   it("counts EGP payments on RMB components against the RMB allowance via exchange rate", async () => {
     const shipment: Shipment = {
       ...baseShipment,

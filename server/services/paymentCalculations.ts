@@ -20,6 +20,7 @@ export type PaymentSnapshot = {
     rmb: CurrencyAllowance;
     egp: CurrencyAllowance;
   };
+  settlement: PaymentSettlement;
   paidByCurrency: PaidByCurrency;
   recoveredTotals?: {
     purchaseCostRmb: number;
@@ -31,6 +32,20 @@ export type PaymentSnapshot = {
 };
 
 export const RMB_COST_COMPONENTS = ["تكلفة البضاعة", "الشحن", "العمولة"] as const;
+export const EGP_COST_COMPONENTS = ["الجمرك", "التخريج"] as const;
+
+export type PaymentSettlementStatus =
+  | "لم يتم دفع أي مبلغ"
+  | "مدفوعة جزئياً"
+  | "مسددة بالكامل";
+
+export type PaymentSettlement = {
+  status: PaymentSettlementStatus;
+  settled: boolean;
+  remainingRmb: number;
+  remainingEgp: number;
+  displayRemainingEgp: number;
+};
 
 export const parseAmountOrZero = (value: unknown): number => {
   if (value === null || value === undefined) return 0;
@@ -190,6 +205,8 @@ export async function calculatePaymentSnapshot(options: {
     (recoveryRate ?? 0);
   let paidRmbComponents = 0;
   let paidEgpComponents = 0;
+  const paidByComponentRmb: Record<string, number> = {};
+  const paidByComponentEgp: Record<string, number> = {};
 
   for (const payment of options.payments) {
     const isRmbComponent = RMB_COST_COMPONENTS.includes(
@@ -197,18 +214,25 @@ export async function calculatePaymentSnapshot(options: {
     );
 
     if (isRmbComponent) {
+      let paidAmountRmb = 0;
       if (payment.paymentCurrency === "RMB") {
-        paidRmbComponents += parseAmountOrZero(payment.amountOriginal);
+        paidAmountRmb = parseAmountOrZero(payment.amountOriginal);
       } else {
         const rate =
           parseAmountOrZero(payment.exchangeRateToEgp) ||
           (shipmentRate > 0 ? shipmentRate : 0);
         if (rate > 0) {
-          paidRmbComponents += parseAmountOrZero(payment.amountEgp) / rate;
+          paidAmountRmb = parseAmountOrZero(payment.amountEgp) / rate;
         }
       }
+      paidRmbComponents += paidAmountRmb;
+      paidByComponentRmb[payment.costComponent] =
+        (paidByComponentRmb[payment.costComponent] ?? 0) + paidAmountRmb;
     } else {
-      paidEgpComponents += parseAmountOrZero(payment.amountEgp);
+      const paidAmountEgp = parseAmountOrZero(payment.amountEgp);
+      paidEgpComponents += paidAmountEgp;
+      paidByComponentEgp[payment.costComponent] =
+        (paidByComponentEgp[payment.costComponent] ?? 0) + paidAmountEgp;
     }
   }
 
@@ -223,6 +247,106 @@ export async function calculatePaymentSnapshot(options: {
       paid: roundAmount(paidEgpComponents),
       remaining: roundAmount(Math.max(0, egpKnownTotal - paidEgpComponents)),
     },
+  };
+
+  const componentTotalsRmb: Record<(typeof RMB_COST_COMPONENTS)[number], number> = {
+    "تكلفة البضاعة": goodsTotalRmb,
+    "الشحن": parseAmountOrZero(options.shipment.shippingCostRmb),
+    "العمولة": parseAmountOrZero(options.shipment.commissionCostRmb),
+  };
+  const componentTotalsEgp: Record<(typeof EGP_COST_COMPONENTS)[number], number> = {
+    "الجمرك": parseAmountOrZero(options.shipment.customsCostEgp),
+    "التخريج": parseAmountOrZero(options.shipment.takhreegCostEgp),
+  };
+
+  if (recoveredTotals) {
+    if (componentTotalsRmb["تكلفة البضاعة"] === 0) {
+      componentTotalsRmb["تكلفة البضاعة"] = recoveredTotals.purchaseCostRmb;
+    }
+    if (componentTotalsEgp["الجمرك"] === 0) {
+      componentTotalsEgp["الجمرك"] = recoveredTotals.customsCostEgp;
+    }
+    if (componentTotalsEgp["التخريج"] === 0) {
+      componentTotalsEgp["التخريج"] = recoveredTotals.takhreegCostEgp;
+    }
+  }
+
+  let remainingRmb = roundAmount(
+    RMB_COST_COMPONENTS.reduce(
+      (sum, component) =>
+        sum +
+        Math.max(
+          0,
+          componentTotalsRmb[component] - (paidByComponentRmb[component] ?? 0),
+        ),
+      0,
+    ),
+  );
+  let remainingEgp = roundAmount(
+    EGP_COST_COMPONENTS.reduce(
+      (sum, component) =>
+        sum +
+        Math.max(
+          0,
+          componentTotalsEgp[component] - (paidByComponentEgp[component] ?? 0),
+        ),
+      0,
+    ),
+  );
+
+  const hasKnownCurrencyComponents = rmbKnownTotal > 0 || egpKnownTotal > 0;
+  const hasAnyPayment = options.payments.some(
+    (payment) =>
+      parseAmountOrZero(payment.amountOriginal) > 0.0001 ||
+      parseAmountOrZero(payment.amountEgp) > 0.0001,
+  );
+  const hasConvertedOnlyRmbComponent =
+    (parseAmountOrZero(options.shipment.purchaseCostEgp) > 0 &&
+      parseAmountOrZero(options.shipment.purchaseCostRmb) <= 0) ||
+    (parseAmountOrZero(options.shipment.shippingCostEgp) > 0 &&
+      parseAmountOrZero(options.shipment.shippingCostRmb) <= 0) ||
+    (parseAmountOrZero(options.shipment.commissionCostEgp) > 0 &&
+      parseAmountOrZero(options.shipment.commissionCostRmb) <= 0);
+  const hasMissingCostAdjustment =
+    parseAmountOrZero(options.shipment.totalMissingCostEgp) > 0.01;
+  const componentSettlementIsReliable =
+    hasKnownCurrencyComponents &&
+    !hasConvertedOnlyRmbComponent &&
+    !hasMissingCostAdjustment;
+
+  let settlementStatus: PaymentSettlementStatus;
+  if (!componentSettlementIsReliable) {
+    const legacyPaidEgp = parseAmountOrZero(options.shipment.totalPaidEgp);
+    const legacyRemainingEgp = roundAmount(
+      Math.max(
+        0,
+        parseAmountOrZero(options.shipment.finalTotalCostEgp) - legacyPaidEgp,
+      ),
+    );
+    remainingRmb = 0;
+    remainingEgp = legacyRemainingEgp;
+    settlementStatus =
+      legacyPaidEgp <= 0.0001
+        ? "لم يتم دفع أي مبلغ"
+        : legacyRemainingEgp <= 0.01
+          ? "مسددة بالكامل"
+          : "مدفوعة جزئياً";
+  } else {
+    settlementStatus = !hasAnyPayment
+      ? "لم يتم دفع أي مبلغ"
+      : remainingRmb <= 0.01 && remainingEgp <= 0.01
+        ? "مسددة بالكامل"
+        : "مدفوعة جزئياً";
+  }
+
+  const settled = settlementStatus === "مسددة بالكامل";
+  const displayRate = shipmentRate > 0 ? shipmentRate : 7.15;
+  const settlement: PaymentSettlement = {
+    status: settlementStatus,
+    settled,
+    remainingRmb,
+    remainingEgp,
+    displayRemainingEgp: roundAmount(remainingEgp + remainingRmb * displayRate),
   };
 
   const roundedPaidByCurrency = Object.fromEntries(
@@ -240,6 +364,7 @@ export async function calculatePaymentSnapshot(options: {
     totalPaidEgp,
     remainingAllowed,
     currencyAllowance,
+    settlement,
     paidByCurrency: roundedPaidByCurrency,
     recoveredTotals,
   };

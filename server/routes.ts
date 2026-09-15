@@ -1221,8 +1221,40 @@ export async function registerRoutes(
   // Shipments
   app.get("/api/shipments", isAuthenticated, async (req, res) => {
     try {
-      const shipments = await routeStorage.getAllShipments();
-      res.json(shipments);
+      const [shipments, payments] = await Promise.all([
+        routeStorage.getAllShipments(),
+        routeStorage.getAllPayments(),
+      ]);
+      const paymentsByShipment = new Map<number, typeof payments>();
+
+      for (const payment of payments) {
+        const shipmentPayments = paymentsByShipment.get(payment.shipmentId) ?? [];
+        shipmentPayments.push(payment);
+        paymentsByShipment.set(payment.shipmentId, shipmentPayments);
+      }
+
+      const shipmentsWithSettlement = await Promise.all(
+        shipments.map(async (shipment) => {
+          const snapshot = await calculatePaymentSnapshot({
+            shipment,
+            payments: paymentsByShipment.get(shipment.id) ?? [],
+          });
+
+          return {
+            ...shipment,
+            paymentSettlement: {
+              status: snapshot.settlement.status,
+              settled: snapshot.settlement.settled,
+              remainingRmb: snapshot.settlement.remainingRmb.toFixed(2),
+              remainingEgp: snapshot.settlement.remainingEgp.toFixed(2),
+              displayRemainingEgp:
+                snapshot.settlement.displayRemainingEgp.toFixed(2),
+            },
+          };
+        }),
+      );
+
+      res.json(shipmentsWithSettlement);
     } catch (error) {
       res.status(500).json({ message: "Error fetching shipments" });
     }

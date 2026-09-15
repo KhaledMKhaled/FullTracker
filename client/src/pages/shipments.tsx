@@ -54,7 +54,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { paymentStatusColors, shipmentStatusColors } from "@/lib/colorMaps";
-import type { Shipment } from "@shared/schema";
+import type { Shipment, ShipmentWithPaymentSettlement } from "@shared/schema";
 
 export default function Shipments() {
   const [search, setSearch] = useState("");
@@ -67,7 +67,7 @@ export default function Shipments() {
   const [viewArchived, setViewArchived] = useState(false);
   const { toast } = useToast();
 
-  const { data: shipments, isLoading } = useQuery<Shipment[]>({
+  const { data: shipments, isLoading } = useQuery<ShipmentWithPaymentSettlement[]>({
     queryKey: ["/api/shipments"],
   });
 
@@ -338,7 +338,7 @@ export default function Shipments() {
                         <StatusBadge status={shipment.status} />
                       </TableCell>
                       <TableCell>
-                        <PaymentStatusBadge status={getPaymentStatus(shipment)} />
+                          <PaymentStatusBadge status={shipment.paymentSettlement.status} />
                       </TableCell>
                       <TableCell>
                         {formatCurrency(shipment.finalTotalCostEgp)}
@@ -348,8 +348,8 @@ export default function Shipments() {
                       </TableCell>
                       <TableCell>
                         <BalanceBadge
-                          cost={shipment.finalTotalCostEgp}
-                          paid={shipment.totalPaidEgp}
+                          settled={shipment.paymentSettlement.settled}
+                          remainingEgp={shipment.paymentSettlement.displayRemainingEgp}
                         />
                       </TableCell>
                       <TableCell>
@@ -452,15 +452,16 @@ function PaymentStatusBadge({ status }: { status: string }) {
 }
 
 function BalanceBadge({
-  cost,
-  paid,
+  settled,
+  remainingEgp,
 }: {
-  cost: string | number | null;
-  paid: string | number | null;
+  settled: boolean;
+  remainingEgp: string | number;
 }) {
-  const costValue = typeof cost === "string" ? parseFloat(cost) : cost || 0;
-  const paidValue = typeof paid === "string" ? parseFloat(paid) : paid || 0;
-  const remaining = Math.max(0, costValue - paidValue);
+  const remaining = Math.max(
+    0,
+    typeof remainingEgp === "string" ? parseFloat(remainingEgp) : remainingEgp,
+  );
 
   const formatCurrency = (num: number) =>
     new Intl.NumberFormat("ar-EG", {
@@ -468,7 +469,7 @@ function BalanceBadge({
       maximumFractionDigits: 2,
     }).format(num);
 
-  if (remaining === 0) {
+  if (settled) {
     return (
       <Badge
         variant="outline"
@@ -509,14 +510,8 @@ function EmptyState() {
   );
 }
 
-function getPaymentStatus(shipment: Shipment) {
-  const cost = parseFloat(shipment.finalTotalCostEgp || "0");
-  const paid = parseFloat(shipment.totalPaidEgp || "0");
-  const balance = parseFloat(shipment.balanceEgp || (cost - paid).toString());
-
-  if (paid <= 0.0001) return "لم يتم دفع أي مبلغ";
-  if (balance <= 0.0001) return "مسددة بالكامل";
-  return "مدفوعة جزئياً";
+function getPaymentStatus(shipment: ShipmentWithPaymentSettlement) {
+  return shipment.paymentSettlement.status;
 }
 
 function TableSkeleton() {

@@ -866,6 +866,19 @@ export type InsertProduct = z.infer<typeof insertProductSchema>;
 export type Product = typeof products.$inferSelect;
 export type InsertShipment = z.infer<typeof insertShipmentSchema>;
 export type Shipment = typeof shipments.$inferSelect;
+export type ShipmentPaymentStatus =
+  | "لم يتم دفع أي مبلغ"
+  | "مدفوعة جزئياً"
+  | "مسددة بالكامل";
+export type ShipmentWithPaymentSettlement = Shipment & {
+  paymentSettlement: {
+    status: ShipmentPaymentStatus;
+    settled: boolean;
+    remainingRmb: string;
+    remainingEgp: string;
+    displayRemainingEgp: string;
+  };
+};
 export type InsertShipmentItem = z.infer<typeof insertShipmentItemSchema>;
 export type ShipmentItem = typeof shipmentItems.$inferSelect;
 export type InsertShipmentShippingDetails = z.infer<typeof insertShipmentShippingDetailsSchema>;
