@@ -307,12 +307,9 @@ export async function calculatePaymentSnapshot(options: {
       parseAmountOrZero(options.shipment.shippingCostRmb) <= 0) ||
     (parseAmountOrZero(options.shipment.commissionCostEgp) > 0 &&
       parseAmountOrZero(options.shipment.commissionCostRmb) <= 0);
-  const hasMissingCostAdjustment =
-    parseAmountOrZero(options.shipment.totalMissingCostEgp) > 0.01;
   const componentSettlementIsReliable =
     hasKnownCurrencyComponents &&
-    !hasConvertedOnlyRmbComponent &&
-    !hasMissingCostAdjustment;
+    !hasConvertedOnlyRmbComponent;
 
   let settlementStatus: PaymentSettlementStatus;
   if (!componentSettlementIsReliable) {

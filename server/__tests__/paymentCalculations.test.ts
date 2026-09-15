@@ -164,6 +164,7 @@ describe("calculatePaymentSnapshot", () => {
       purchaseCostEgp: "154000",
       shippingCostEgp: "20736",
       commissionCostEgp: "8000",
+      totalMissingCostEgp: "3017.83",
       finalTotalCostEgp: "251486",
       totalPaidEgp: "251338",
       balanceEgp: "148",
@@ -299,7 +300,7 @@ describe("calculatePaymentSnapshot", () => {
     assert.equal(snapshot.settlement.displayRemainingEgp, 700);
   });
 
-  it("uses the adjusted historical total when missing-piece costs reduce the amount due", async () => {
+  it("requires native-currency components to be paid even when missing-piece costs adjust the historical EGP total", async () => {
     const shipment: Shipment = {
       ...baseShipment,
       purchaseCostRmb: "100",
@@ -324,8 +325,9 @@ describe("calculatePaymentSnapshot", () => {
       ],
     });
 
-    assert.equal(snapshot.settlement.status, "مسددة بالكامل");
-    assert.equal(snapshot.settlement.displayRemainingEgp, 0);
+    assert.equal(snapshot.settlement.status, "مدفوعة جزئياً");
+    assert.equal(snapshot.settlement.remainingRmb, 14.29);
+    assert.equal(snapshot.settlement.displayRemainingEgp, 100.03);
   });
 
   it("counts EGP payments on RMB components against the RMB allowance via exchange rate", async () => {
