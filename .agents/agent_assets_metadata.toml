@@ -6,15 +6,32 @@ id = "MaxEmUHEiYbAjvPmHnGfT"
 uri = "file://PRD_ملفات_التجارة_المحلية.txt"
 type = "text"
 title = "PRD — وحدة ملفات التجارة المحلية"
+logical_id = "b607134e-5639-4186-8fff-c53590f74098"
 
 [[outputs]]
 id = "tgCFT1VgzXVkS8zTcCrMA"
 uri = "file://PRD_ملفات_التجارة_المحلية.docx"
 type = "word_document"
 title = "PRD — وحدة ملفات التجارة المحلية (v1.1)"
+logical_id = "6aac8d19-6ce0-4768-8056-d40f0d3dac15"
 
 [[outputs]]
 id = "Tp4ws2z4mAlADu5roYdd1"
 uri = "file://PDR-2026-05-02.md"
 type = "text"
 title = "تقرير التطوير اليومي — 2 مايو 2026"
+logical_id = "e894c880-44d8-45ef-9b3c-904f103ab8c0"
+
+[[outputs]]
+id = "cMYgCUcHND-uOf3O-axaC"
+uri = "file://.agents/outputs/missing-migration-files.csv"
+type = "table"
+title = "Missing migration files"
+description = "The 16 referenced files unavailable from current production URLs and not found in the stored backup archives: 2 item images and 14 payment attachments."
+logical_id = "e010c28c-f045-4625-9d32-8c91a8e86cbe"
+content_hash = "sha256:8edd7f94197e0d7129591fd23e5dc9431b57f7815466bdbb06605717af6540aa"
+size = 1603
+mtime_ms = 1791218475870
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:acbf287f-3e21-423d-b030-6c3363820cc4/e010c28c-f045-4625-9d32-8c91a8e86cbe/8de6a593-60c4-4c9a-9199-5ac43ec3b2b1"
+storage_version_token = "1791218486127777"
+content_type = "text/csv"

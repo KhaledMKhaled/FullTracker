@@ -1,7 +1,9 @@
 # Tracker on Hostinger — Ubuntu 26.04 LTS
 
 This is a deployment kit, not proof of a live migration. VPS access, domain,
-installed package versions, production export and DNS cutover are not yet verified.
+DNS cutover are not implied by these instructions. The private rehearsal has been
+verified on Ubuntu 26.04.1, Node 22.22.1 and PostgreSQL 18.6; public HTTPS and final
+cutover remain pending.
 Do not run restore commands against your current production database.
 
 ## 1. Confirm the target
@@ -9,7 +11,7 @@ Do not run restore commands against your current production database.
 Use the Hostinger terminal or your existing SSH access. Never send passwords or
 private keys in chat. Confirm `cat /etc/os-release`, `free -h`, `df -h`, domain,
 and source PostgreSQL major version (`SHOW server_version;` using your authorized
-production connection). Use a supported Node 24 LTS patch release and PostgreSQL
+production connection). Use a supported Node 22 LTS patch release and PostgreSQL
 of the same major as the source, or a newer compatible version after rehearsal.
 Do not assume the default Ubuntu PostgreSQL major matches the source.
 Allow enough disk for the database, media, all archived backup ZIPs, two releases,
@@ -18,7 +20,7 @@ than ordinary application backups because it includes archive bytes.
 
 ## 2. Install services and isolate the app
 
-Install Node 24 LTS from its official distribution using checksum verification;
+Install Node 22 LTS from Ubuntu's signed repositories;
 confirm `/usr/bin/node --version` and `npm --version`. Record the exact patch
 version used in the release notes and use it for subsequent builds.
 
@@ -83,6 +85,9 @@ Use a deployment account to build; do not run npm install as root.
 
 ```sh
 cd /srv/tracker/releases/RELEASE_ID
+# Outside Replit only: replace its unreachable internal registry URLs.
+# Package versions and integrity hashes remain unchanged.
+node deploy/hostinger/prepare-lockfile.mjs
 npm ci
 npm run check
 NODE_ENV=production npm run build
@@ -137,6 +142,10 @@ Rehearse into a NEW database:
 
 ```sh
 sudo -u postgres createdb --owner=tracker tracker_rehearsal
+# ONLY in the newly created, empty rehearsal database:
+# pg_dump includes CREATE SCHEMA public; remove the empty default first.
+# No CASCADE: this fails safely if the schema is not empty.
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d tracker_rehearsal -c 'DROP SCHEMA public;'
 # Put the dump somewhere postgres can read without making it world-readable.
 sudo -u postgres pg_restore --exit-on-error --single-transaction --no-owner \
   --no-acl --role=tracker -d tracker_rehearsal /PROTECTED_PATH/database.dump
@@ -150,7 +159,8 @@ No migration has been verified until these checks pass on the actual target.
 
 For final cutover, repeat the export under a write freeze and restore into the
 empty `tracker` DB using the same command with `-d tracker`. Never add `--clean`
-to an unreviewed command. Extract uploads into a staging directory, inspect the
+to an unreviewed command. Remove its empty default public schema first as in the
+rehearsal instructions; never do this on an existing app database. Extract uploads into a staging directory, inspect the
 trusted archive for absolute paths, traversal and symlinks, then copy its uploads
 contents into `/srv/tracker/shared/uploads` with owner tracker:tracker.
 Keep both old and new sites closed to writes until final checks complete.
