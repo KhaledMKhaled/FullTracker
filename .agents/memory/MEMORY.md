@@ -4,3 +4,4 @@
 - [Restore can orphan FK rows](restore-orphan-fk.md) — db:push FK violations after backup/restore mean orphaned rows (e.g. backup_jobs → deleted user); repoint or delete, then re-push.
 - [Shipment settlement status](shipment-settlement-status.md) — determine settlement per native-currency component only when component data is complete; otherwise preserve legacy EGP behavior.
 - [Statement accounting basis](statement-accounting-basis.md) — bank-style PDFs use current undated costs, not invented historical entries; adjustments and allocations must not count twice.
+- [Hostinger production target](hostinger-target.md) — user targets app and PostgreSQL on Hostinger Ubuntu 26.04 LTS; full migration dumps differ from in-app backups.

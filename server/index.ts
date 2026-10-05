@@ -3,9 +3,20 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import path from "path";
+import { validateRuntimeConfig } from "./runtimeConfig";
+import { pool } from "./db";
 
+const runtime = validateRuntimeConfig();
 const app = express();
 const httpServer = createServer(app);
+app.get("/healthz", async (_req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({ status: "ok" });
+  } catch {
+    res.status(503).json({ status: "unavailable" });
+  }
+});
 
 // Serve all uploaded files (any subfolder under uploads/), except backup archives
 app.use("/uploads", (req, res, next) => {
@@ -57,7 +68,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      if (capturedJsonResponse && process.env.NODE_ENV !== "production") {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -93,11 +104,11 @@ app.use((req, res, next) => {
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5000", 10);
+  const port = runtime.port;
   httpServer.listen(
     {
       port,
-      host: "0.0.0.0",
+      host: runtime.host,
       reusePort: true,
     },
     () => {

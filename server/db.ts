@@ -14,5 +14,5 @@ if (!connectionString) {
   );
 }
 
-export const pool = new Pool({ connectionString });
+export const pool = new Pool({ connectionString, connectionTimeoutMillis: 5000 });
 export const db = drizzle(pool, { schema });

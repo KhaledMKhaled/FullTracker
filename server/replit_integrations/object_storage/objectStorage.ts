@@ -64,6 +64,9 @@ export class ObjectStorageService {
 
   // Gets the private object directory.
   getPrivateObjectDir(): string {
+    if (process.env.STORAGE_MODE === "vps") {
+      throw new Error("Replit object storage is disabled on VPS. Use direct uploads; migrate legacy object references before cutover.");
+    }
     const dir = process.env.PRIVATE_OBJECT_DIR || "";
     if (!dir) {
       throw new Error(

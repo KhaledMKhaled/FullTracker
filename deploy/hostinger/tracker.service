@@ -1,0 +1,22 @@
+[Unit]
+Description=Tracker production application
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=tracker
+Group=tracker
+WorkingDirectory=/srv/tracker/current
+EnvironmentFile=/etc/tracker/app.env
+ExecStart=/usr/bin/node /srv/tracker/current/dist/index.cjs
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/tracker/shared
+
+[Install]
+WantedBy=multi-user.target

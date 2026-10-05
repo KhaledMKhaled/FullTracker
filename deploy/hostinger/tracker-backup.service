@@ -1,0 +1,8 @@
+[Unit]
+Description=Tracker consistent database and upload backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /srv/tracker/current/deploy/hostinger/backup.sh
+UMask=0077

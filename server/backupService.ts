@@ -461,14 +461,8 @@ async function runPsqlRestore(sqlContent: string): Promise<void> {
       if (code === 0) {
         resolve();
       } else {
-        // Restore failed - recreate empty schema so app can still run
+        // Do not automatically mutate the schema after a failed restore.
         console.error(`Restore failed with code ${code}: ${stderr}`);
-        try {
-          await execAsync(`cd /home/runner/workspace && npm run db:push --force`);
-          console.log("Recreated database schema after failed restore");
-        } catch (e) {
-          console.error("Failed to recreate schema:", e);
-        }
         reject(new Error(`Restore failed: ${stderr.slice(0, 500)}`));
       }
     });
@@ -518,7 +512,9 @@ export async function startBackup(userId: string): Promise<BackupJob> {
 
       let mediaObjects: Array<{ path: string; size: number; contentType: string }> = [];
       try {
-        mediaObjects = await objectStorage.listAllObjects();
+        if (process.env.STORAGE_MODE !== "vps") {
+          mediaObjects = await objectStorage.listAllObjects();
+        }
       } catch (err) {
         console.warn("Could not list media objects:", err);
       }
