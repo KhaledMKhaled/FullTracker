@@ -38,3 +38,14 @@ The user approved continuing preparation with missing legacy files documented, r
 **Why:** Explicit response to the missing-file inventory; this was not approval for DNS cutover or deletion of the affected records.
 
 **How to apply:** Preserve those references and the missing-file report. Keep preparation approval separate from final migration and write-freeze approval.
+
+After the authorized Hostinger cutover, the VPS database is the authoritative
+production source. Replit's old database is retained for recovery, not synchronization.
+
+**Why:** New live records now belong to the VPS; restoring the earlier Replit copy
+would overwrite post-cutover activity. Publishing changes on Replit no longer
+updates the live app or its database.
+
+**How to apply:** Use the VPS operations runbook for production work. Treat old
+Replit data as historical, and keep domain-registration transfer separate from
+app-hosting shutdown.

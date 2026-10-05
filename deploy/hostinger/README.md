@@ -1,9 +1,8 @@
 # Tracker on Hostinger — Ubuntu 26.04 LTS
 
-This is a deployment kit, not proof of a live migration. VPS access, domain,
-DNS cutover are not implied by these instructions. The private rehearsal has been
-verified on Ubuntu 26.04.1, Node 22.22.1 and PostgreSQL 18.6; public HTTPS and final
-cutover remain pending.
+This is the reusable deployment procedure. For the completed Hostinger cutover,
+verification results and remaining account-side actions, see LIVE-OPERATIONS.md.
+The target runs Ubuntu 26.04.1, Node 22.22.1 and PostgreSQL 18.6.
 Do not run restore commands against your current production database.
 
 ## 1. Confirm the target
@@ -26,7 +25,7 @@ version used in the release notes and use it for subsequent builds.
 
 ```sh
 sudo apt update
-sudo apt install nginx certbot python3-certbot-nginx postgresql postgresql-client \
+sudo apt install nodejs npm nginx certbot python3-certbot-nginx postgresql postgresql-client \
   build-essential rsync openssl
 # Check pg_dump --version; install a matching/newer client if necessary.
 sudo adduser --system --group --home /srv/tracker tracker
@@ -224,7 +223,5 @@ Keep the source deployment intact and read-only during the rollback window.
 
 ## Verification status
 
-Repository tests and build can be checked here. Ubuntu package installation,
-systemd/Nginx/HTTPS, production import, live signed-in flows, off-server backups
-and DNS cutover need authorized access to the actual VPS and are not claimed as
-completed by this kit.
+See LIVE-OPERATIONS.md for actual VPS verification results and unresolved items.
+Off-server backup replication and full browser coverage are not completed by this kit.
