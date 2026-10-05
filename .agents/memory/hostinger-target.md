@@ -26,3 +26,9 @@ Do not pass the source connection URI as PGDATABASE while inheriting workspace P
 **Why:** The export client treated the URI as a literal database name and attempted to connect to the workspace database instead.
 
 **How to apply:** Parse the authorized source URL privately into a clean child-process PG environment, never log credentials, and verify source identity before export.
+
+The user approved continuing preparation with missing legacy files documented, rather than blocking preparation on recovery.
+
+**Why:** Explicit response to the missing-file inventory; this was not approval for DNS cutover or deletion of the affected records.
+
+**How to apply:** Preserve those references and the missing-file report. Keep preparation approval separate from final migration and write-freeze approval.
