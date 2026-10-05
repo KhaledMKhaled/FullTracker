@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ShipmentStatementSelector } from "@/components/shipment-statement-selector";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -163,6 +164,7 @@ export default function AccountingPage() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h1 className="text-2xl font-bold">المحاسبة</h1>
         </div>
+        <ShipmentStatementSelector />
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <Card key={i}>
@@ -191,6 +193,7 @@ export default function AccountingPage() {
           </div>
         </div>
       </div>
+      <ShipmentStatementSelector />
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-lg">

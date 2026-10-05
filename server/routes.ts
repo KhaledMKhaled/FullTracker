@@ -36,6 +36,7 @@ import {
   updateBackupSettingsSchema,
 } from "@shared/schema";
 import { calculatePaymentSnapshot, parseAmountOrZero } from "./services/paymentCalculations";
+import { buildShipmentStatement } from "./services/shipmentStatement";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import path from "path";
@@ -1257,6 +1258,20 @@ export async function registerRoutes(
       res.json(shipmentsWithSettlement);
     } catch (error) {
       res.status(500).json({ message: "Error fetching shipments" });
+    }
+  });
+
+  app.get("/api/shipments/:id/account-statement", isAuthenticated, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isSafeInteger(id) || id <= 0) {
+      return res.status(400).json({ message: "رقم الشحنة غير صالح" });
+    }
+    try {
+      res.set("Cache-Control", "no-store");
+      res.json(await buildShipmentStatement(routeStorage, id));
+    } catch (error) {
+      const { status, body } = formatError(error, { code: "STATEMENT_FETCH_FAILED", status: 500 });
+      res.status(status).json(body);
     }
   });
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, Fragment, useMemo, useRef } from "react";
+import { useShipmentStatementDownload } from "@/hooks/use-shipment-statement";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -275,6 +276,7 @@ interface PaymentSummarySnapshot {
 }
 
 export default function Payments() {
+  const statementDownload = useShipmentStatementDownload();
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -2206,7 +2208,21 @@ export default function Payments() {
                                   {formatDate(shipment.lastPaymentDate)}
                                 </TableCell>
                                 <TableCell>
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-2 flex-wrap">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      disabled={statementDownload.pendingId !== null}
+                                      aria-busy={statementDownload.pendingId === shipment.id}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        statementDownload.download(shipment.id);
+                                      }}
+                                      data-testid={`button-account-statement-${shipment.id}`}
+                                    >
+                                      <Download className="w-4 h-4 ml-1" />
+                                      {statementDownload.pendingId === shipment.id ? "جارٍ إعداد الكشف..." : "كشف حساب PDF"}
+                                    </Button>
                                     <Button
                                       variant="outline"
                                       size="sm"

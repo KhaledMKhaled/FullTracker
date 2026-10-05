@@ -14,6 +14,7 @@ export type ErrorCode =
   | "CONFLICT_RETRY"
   | "PAYMENT_DB_ERROR"
   | "PAYMENT_FETCH_FAILED"
+  | "STATEMENT_FETCH_FAILED"
   | "PAYMENT_DELETE_FAILED"
   | "PAYMENT_COMPONENT_INVALID"
   | "AUTO_ALLOCATION_NOT_ELIGIBLE"
@@ -44,6 +45,7 @@ const defaultMessages: Record<ErrorCode, string> = {
   CONFLICT_RETRY: "حدث تعارض بسبب عملية أخرى على نفس الشحنة. أعد المحاولة بعد لحظات.",
   PAYMENT_DB_ERROR: "تعذر حفظ الدفعة بسبب خطأ في قاعدة البيانات.",
   PAYMENT_FETCH_FAILED: "تعذر جلب بيانات المدفوعات حالياً.",
+  STATEMENT_FETCH_FAILED: "تعذر تحميل كشف حساب الشحنة. حاول مرة أخرى.",
   PAYMENT_DELETE_FAILED: "تعذر حذف الدفعة.",
   PAYMENT_COMPONENT_INVALID: "مكون التكلفة غير صالح لهذه الدفعة.",
   AUTO_ALLOCATION_NOT_ELIGIBLE: "هذه الدفعة غير مؤهلة للتوزيع التلقائي.",

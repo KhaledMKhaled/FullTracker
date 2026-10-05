@@ -13,6 +13,11 @@ export type CurrencyAllowance = {
 };
 
 export type PaymentSnapshot = {
+  componentSettlementIsReliable: boolean;
+  components: {
+    name: string; currency: "RMB" | "EGP"; cost: number;
+    paid: number; remaining: number; surplus: number;
+  }[];
   knownTotalCost: number;
   totalPaidEgp: number;
   remainingAllowed: number;
@@ -52,6 +57,16 @@ export const parseAmountOrZero = (value: unknown): number => {
   const parsed = typeof value === "number" ? value : parseFloat(value as any);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+// Shared by settlement and read-only statements; never use current FX rates.
+export function paymentInComponentCurrency(payment: ShipmentPayment, shipmentRate: number) {
+  const currency = RMB_COST_COMPONENTS.includes(payment.costComponent as any) ? "RMB" : "EGP";
+  const rate = parseAmountOrZero(payment.exchangeRateToEgp) || shipmentRate;
+  const amount = currency === "EGP" ? parseAmountOrZero(payment.amountEgp)
+    : payment.paymentCurrency === "RMB" ? parseAmountOrZero(payment.amountOriginal)
+    : rate > 0 ? parseAmountOrZero(payment.amountEgp) / rate : 0;
+  return { currency, amount } as { currency: "RMB" | "EGP"; amount: number };
+}
 
 export const computeKnownTotalCost = (shipment: Shipment): number => {
   const purchaseRate = parseAmountOrZero(shipment.purchaseRmbToEgpRate);
@@ -214,17 +229,7 @@ export async function calculatePaymentSnapshot(options: {
     );
 
     if (isRmbComponent) {
-      let paidAmountRmb = 0;
-      if (payment.paymentCurrency === "RMB") {
-        paidAmountRmb = parseAmountOrZero(payment.amountOriginal);
-      } else {
-        const rate =
-          parseAmountOrZero(payment.exchangeRateToEgp) ||
-          (shipmentRate > 0 ? shipmentRate : 0);
-        if (rate > 0) {
-          paidAmountRmb = parseAmountOrZero(payment.amountEgp) / rate;
-        }
-      }
+      const paidAmountRmb = paymentInComponentCurrency(payment, shipmentRate).amount;
       paidRmbComponents += paidAmountRmb;
       paidByComponentRmb[payment.costComponent] =
         (paidByComponentRmb[payment.costComponent] ?? 0) + paidAmountRmb;
@@ -357,6 +362,21 @@ export async function calculatePaymentSnapshot(options: {
   ) as PaidByCurrency;
 
   return {
+    componentSettlementIsReliable,
+    components: [
+      ...RMB_COST_COMPONENTS.map((name) => ({
+        name, currency: "RMB" as const, cost: roundAmount(componentTotalsRmb[name]),
+        paid: roundAmount(paidByComponentRmb[name] ?? 0),
+        remaining: roundAmount(Math.max(0, componentTotalsRmb[name] - (paidByComponentRmb[name] ?? 0))),
+        surplus: roundAmount(Math.max(0, (paidByComponentRmb[name] ?? 0) - componentTotalsRmb[name])),
+      })),
+      ...EGP_COST_COMPONENTS.map((name) => ({
+        name, currency: "EGP" as const, cost: roundAmount(componentTotalsEgp[name]),
+        paid: roundAmount(paidByComponentEgp[name] ?? 0),
+        remaining: roundAmount(Math.max(0, componentTotalsEgp[name] - (paidByComponentEgp[name] ?? 0))),
+        surplus: roundAmount(Math.max(0, (paidByComponentEgp[name] ?? 0) - componentTotalsEgp[name])),
+      })),
+    ],
     knownTotalCost,
     totalPaidEgp,
     remainingAllowed,
