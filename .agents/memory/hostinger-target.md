@@ -15,6 +15,12 @@ The user wants to retain the same custom domain currently used on Replit.
 
 **How to apply:** Prepare and rehearse without touching DNS; obtain a write-freeze and cutover confirmation before switching traffic.
 
+The user manages this domain's DNS in Replit Publishing → Domains.
+
+**Why:** The user confirmed the DNS management location; Name.com nameservers alone do not mean they use a separate Name.com account.
+
+**How to apply:** Direct manual DNS changes to Replit's domain settings, leaving existing traffic records intact during certificate preparation.
+
 For external deployment, Replit-internal npm registry URLs in the lockfile need an external equivalent with the same version and integrity hash.
 
 **Why:** The VPS cannot resolve the internal package proxy, causing npm ci to fail despite a valid lockfile. This is a network-portability issue, not a dependency vulnerability exception.
