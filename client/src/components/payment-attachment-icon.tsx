@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import { hasPaymentAttachment } from "@/lib/paymentAttachments";
 import type { ShipmentPayment } from "@shared/schema";
+import { PaymentReceiptUpload } from "./payment-receipt-upload";
 
 interface PaymentAttachmentIconProps {
   paymentId: number | null | undefined;
@@ -19,19 +20,23 @@ export function PaymentAttachmentIcon({
   className,
 }: PaymentAttachmentIconProps) {
   const [hasError, setHasError] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const upload = paymentId ? <PaymentReceiptUpload paymentId={paymentId}
+    hasReceipt={hasPaymentAttachment({ attachmentUrl })}
+    onSaved={() => { setHasError(false); setRevision(Date.now()); }} /> : null;
 
   if (!paymentId || !hasPaymentAttachment({ attachmentUrl })) {
-    return null;
+    return upload;
   }
 
   // Use Object Storage URL directly if available (same approach as item images)
   // This is more reliable than going through the /api/payments/:id/attachment route
   const imageUrl = attachmentUrl?.startsWith("/objects/") 
     ? attachmentUrl 
-    : `/api/payments/${paymentId}/attachment?inline=1`;
+    : `/api/payments/${paymentId}/attachment?inline=1&v=${revision}`;
 
   return (
-    <Tooltip>
+    <span className="inline-flex items-center gap-1"><Tooltip>
       <TooltipTrigger asChild>
         <a
           href={imageUrl}
@@ -62,6 +67,6 @@ export function PaymentAttachmentIcon({
           <span className="text-xs text-muted-foreground">انقر للعرض</span>
         </div>
       </TooltipContent>
-    </Tooltip>
+    </Tooltip>{upload}</span>
   );
 }

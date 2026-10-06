@@ -45,7 +45,7 @@ import { randomUUID } from "crypto";
 import { ZodError } from "zod";
 import { ObjectStorageService } from "./replit_integrations/object_storage";
 import { db } from "./db";
-import { mediaAssets } from "@shared/schema";
+import { mediaAssets, shipmentPayments } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const uploadItemImage = multer({
@@ -2099,6 +2099,46 @@ export async function registerRoutes(
       }
     },
   );
+
+  app.post("/api/payments/:paymentId/attachment", requireRole(["مدير", "محاسب"]),
+    async (req, res, next) => {
+      const id = Number(req.params.paymentId);
+      if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "معرف الدفعة غير صالح" });
+      try {
+        if (!await routeStorage.getPaymentById(id)) return res.status(404).json({ message: "الدفعة غير موجودة" });
+        next();
+      } catch { res.status(500).json({ message: "تعذر التحقق من الدفعة" }); }
+    },
+    handlePaymentAttachmentUpload,
+    async (req, res) => {
+      if (!req.file) return res.status(400).json({ message: "اختر صورة الإيصال" });
+      let filePath = req.file.path;
+      let saved = false;
+      try {
+        const contentType = detectImageContentType(await fs.promises.readFile(filePath));
+        if (!contentType) return res.status(400).json({ message: "اختر صورة PNG أو JPEG أو GIF أو WebP صالحة" });
+        const extension = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" }[contentType]!;
+        const filename = `payment-${randomUUID()}.${extension}`;
+        const target = path.join("uploads/payments", filename);
+        await fs.promises.rename(filePath, target);
+        filePath = target;
+        const [payment] = await db.update(shipmentPayments).set({
+          attachmentUrl: `/uploads/payments/${filename}`,
+          attachmentOriginalName: req.file.originalname,
+          attachmentMimeType: contentType,
+          attachmentSize: req.file.size,
+          attachmentUploadedAt: new Date(),
+        }).where(eq(shipmentPayments.id, Number(req.params.paymentId))).returning();
+        if (!payment) return res.status(404).json({ message: "الدفعة غير موجودة" });
+        saved = true;
+        // Preserve old files for recovery; backups collect uploads/payments recursively.
+        res.json({ attachmentUrl: payment.attachmentUrl });
+      } catch {
+        res.status(500).json({ message: "تعذر حفظ الإيصال، حاول مرة أخرى" });
+      } finally {
+        if (!saved) await fs.promises.unlink(filePath).catch(() => {});
+      }
+    });
 
   const sendPaymentAttachment = async (
     req: Parameters<RequestHandler>[0],
