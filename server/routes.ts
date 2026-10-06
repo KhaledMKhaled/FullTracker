@@ -815,23 +815,31 @@ export async function registerRoutes(
     }
   });
 
-  // Direct local upload for payment attachments (primary method - no Object Storage needed)
-  app.post("/api/upload/payment-attachment/direct", isAuthenticated, uploadPaymentAttachment.single("attachment"), async (req, res) => {
+  // Payment images use the same database-backed storage as shipment item images.
+  app.post("/api/upload/payment-attachment/direct", requireRole(["مدير", "محاسب"]), handlePaymentAttachmentUpload, async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "لم يتم رفع صورة" });
       }
-      const attachmentUrl = `/uploads/payments/${req.file.filename}`;
-      console.log("[Upload] Payment Attachment saved locally:", attachmentUrl);
+      const data = await fs.promises.readFile(req.file.path);
+      const contentType = detectImageContentType(data);
+      if (!contentType) return res.status(400).json({ message: "محتوى الملف ليس صورة مدعومة" });
+      const id = randomUUID();
+      await db.insert(mediaAssets).values({
+        id, category: "payment-attachment", contentType,
+        originalName: req.file.originalname, size: data.length, data,
+      });
       res.json({
-        attachmentUrl,
+        attachmentUrl: `/media/${id}`,
         attachmentOriginalName: req.file.originalname,
-        attachmentMimeType: req.file.mimetype,
-        attachmentSize: req.file.size,
+        attachmentMimeType: contentType,
+        attachmentSize: data.length,
       });
     } catch (error) {
       console.error("[Upload] Error saving payment attachment:", error);
       res.status(500).json({ message: "خطأ في حفظ المرفق" });
+    } finally {
+      if (req.file) await fs.promises.unlink(req.file.path).catch(() => {});
     }
   });
 
@@ -2112,31 +2120,34 @@ export async function registerRoutes(
     handlePaymentAttachmentUpload,
     async (req, res) => {
       if (!req.file) return res.status(400).json({ message: "اختر صورة الإيصال" });
-      let filePath = req.file.path;
-      let saved = false;
+      const file = req.file;
+      const filePath = file.path;
       try {
-        const contentType = detectImageContentType(await fs.promises.readFile(filePath));
+        const data = await fs.promises.readFile(filePath);
+        const contentType = detectImageContentType(data);
         if (!contentType) return res.status(400).json({ message: "اختر صورة PNG أو JPEG أو GIF أو WebP صالحة" });
-        const extension = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" }[contentType]!;
-        const filename = `payment-${randomUUID()}.${extension}`;
-        const target = path.join("uploads/payments", filename);
-        await fs.promises.rename(filePath, target);
-        filePath = target;
-        const [payment] = await db.update(shipmentPayments).set({
-          attachmentUrl: `/uploads/payments/${filename}`,
-          attachmentOriginalName: req.file.originalname,
+        const payment = await db.transaction(async (tx) => {
+          const assetId = randomUUID();
+          await tx.insert(mediaAssets).values({
+            id: assetId, category: "payment-attachment", contentType,
+            originalName: file.originalname, size: data.length, data,
+          });
+          const [updated] = await tx.update(shipmentPayments).set({
+          attachmentUrl: `/media/${assetId}`,
+          attachmentOriginalName: file.originalname,
           attachmentMimeType: contentType,
-          attachmentSize: req.file.size,
+          attachmentSize: file.size,
           attachmentUploadedAt: new Date(),
-        }).where(eq(shipmentPayments.id, Number(req.params.paymentId))).returning();
-        if (!payment) return res.status(404).json({ message: "الدفعة غير موجودة" });
-        saved = true;
-        // Preserve old files for recovery; backups collect uploads/payments recursively.
+          }).where(eq(shipmentPayments.id, Number(req.params.paymentId))).returning();
+          if (!updated) throw new Error("Payment no longer exists");
+          return updated;
+        });
+        // Preserve old files/assets for recovery; new images are in database backups.
         res.json({ attachmentUrl: payment.attachmentUrl });
       } catch {
         res.status(500).json({ message: "تعذر حفظ الإيصال، حاول مرة أخرى" });
       } finally {
-        if (!saved) await fs.promises.unlink(filePath).catch(() => {});
+        await fs.promises.unlink(filePath).catch(() => {});
       }
     });
 
@@ -2166,6 +2177,18 @@ export async function registerRoutes(
     }
 
     const attachmentUrl = payment.attachmentUrl;
+    if (attachmentUrl.startsWith("/media/")) {
+      const [asset] = await db.select().from(mediaAssets)
+        .where(eq(mediaAssets.id, attachmentUrl.slice("/media/".length))).limit(1);
+      if (!asset) return res.status(404).json({ message: "الصورة غير موجودة" });
+      res.set({
+        "Content-Type": asset.contentType,
+        "Content-Length": String(asset.data.length),
+        "Cache-Control": "private, no-cache",
+        "X-Content-Type-Options": "nosniff",
+      });
+      return res.send(asset.data);
+    }
     const disposition = options.inline ? "inline" : "attachment";
     const rawFilename = payment.attachmentOriginalName || "attachment";
     // Sanitize for Content-Disposition: ASCII fallback + RFC 5987 encoded full name

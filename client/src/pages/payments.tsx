@@ -289,6 +289,7 @@ export default function Payments() {
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [attachmentInputKey, setAttachmentInputKey] = useState(0);
+  const attachmentPickerRef = useRef<HTMLInputElement>(null);
   const [uploadedAttachment, setUploadedAttachment] = useState<{ attachmentUrl: string; attachmentOriginalName: string; attachmentMimeType: string; attachmentSize: number } | null>(null);
   const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [currentPageShipments, setCurrentPageShipments] = useState(1);
@@ -724,7 +725,7 @@ export default function Payments() {
     pendingSummaryRef.current = null;
   };
 
-  const handleAttachmentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAttachmentChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
       setAttachmentFile(null);
@@ -751,7 +752,17 @@ export default function Payments() {
 
     setAttachmentFile(file);
     setAttachmentError(null);
-    setUploadedAttachment(null); // Reset uploaded URL when new file is selected
+    setUploadedAttachment(null);
+    setIsUploadingAttachment(true);
+    try {
+      const uploaded = await uploadPaymentAttachment(file);
+      setUploadedAttachment(uploaded);
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "تعذر رفع الصورة، اخترها مرة أخرى.");
+    } finally {
+      setIsUploadingAttachment(false);
+      if (attachmentPickerRef.current) attachmentPickerRef.current.value = "";
+    }
   };
 
   const paymentErrorOverrides = {
@@ -843,6 +854,7 @@ export default function Payments() {
   };
 
   const handleSubmit = form.handleSubmit(async (data) => {
+    if (isUploadingAttachment) return;
     setClientValidationError(null);
 
     if (!selectedShipmentId) {
@@ -1416,6 +1428,7 @@ export default function Payments() {
         <Dialog
           open={isDialogOpen}
           onOpenChange={(open) => {
+            if (isUploadingAttachment) return;
             setIsDialogOpen(open);
             if (!open) {
               resetForm();
@@ -1453,6 +1466,7 @@ export default function Payments() {
                             setIsDialogOpen(false);
                             resetForm();
                           }}
+                          disabled={isUploadingAttachment}
                         >
                           إلغاء
                         </Button>
@@ -1470,7 +1484,7 @@ export default function Payments() {
                             <Button
                               type="button"
                               onClick={handleNextStep}
-                              disabled={isOverpayment || createMutation.isPending}
+                              disabled={isOverpayment || createMutation.isPending || isUploadingAttachment || !!attachmentError}
                             >
                               التالي
                               <ChevronLeft className="h-4 w-4 mr-2" />
@@ -1900,16 +1914,31 @@ export default function Payments() {
 
                           <div className="space-y-2">
                             <Label htmlFor="attachment">إرفاق صورة (اختياري)</Label>
-                            <Input
+                            <input
+                              ref={attachmentPickerRef}
                               key={attachmentInputKey}
                               id="attachment"
                               type="file"
-                              accept="image/*"
+                              accept="image/png,image/jpeg,image/gif,image/webp"
+                              className="sr-only"
+                              disabled={isUploadingAttachment}
                               onChange={handleAttachmentChange}
                               data-testid="input-attachment"
                             />
+                            <Button type="button" variant="outline"
+                              disabled={isUploadingAttachment || createMutation.isPending}
+                              onClick={() => attachmentPickerRef.current?.click()}
+                              data-testid="button-upload-payment-image">
+                              {isUploadingAttachment ? "جارٍ رفع الصورة..." : attachmentFile ? "تغيير الصورة" : "اختيار ورفع صورة"}
+                            </Button>
+                            {attachmentFile && <p className="text-sm">{attachmentFile.name}</p>}
+                            {uploadedAttachment && !attachmentError && <>
+                              <p className="text-sm text-green-700" role="status">تم رفع الصورة وحفظها بنجاح — احفظ الدفعة لربطها بها.</p>
+                              <img src={uploadedAttachment.attachmentUrl} alt="معاينة إيصال الدفعة المحفوظ"
+                                className="max-h-40 rounded border object-contain" />
+                            </>}
                             <p className="text-xs text-muted-foreground">
-                              يُسمح بالصور فقط بحد أقصى 2MB.
+                              PNG وJPG وGIF وWebP بحد أقصى 2MB. تُحفظ الصورة داخل قاعدة البيانات وتُضمّن في النسخ الاحتياطية والاسترجاع مثل صور بنود الشحنات.
                             </p>
                             {attachmentError && (
                               <p className="text-xs text-destructive">{attachmentError}</p>

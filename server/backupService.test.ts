@@ -20,6 +20,22 @@ function makeBackupZip(): Buffer {
   return zip.toBuffer();
 }
 
+test("database backup and restore retain payment image bytes and media references", () => {
+  assert.ok(!PG_DUMP_EXCLUDED_TABLES.some((name: string) => name.includes("media_assets")));
+  assert.ok(!RESTORE_PRESERVED_TABLES.some((name: string) => name === "media_assets"));
+  const sql = [
+    "COPY public.media_assets (id, category, data) FROM stdin;",
+    "receipt-test\tpayment-attachment\t\\\\x89504e470d0a1a0a",
+    "\\.",
+    "COPY public.shipment_payments (id, attachment_url) FROM stdin;",
+    "123\t/media/receipt-test",
+    "\\.",
+  ].join("\n");
+  const restored = preprocessSqlForRestore(sql);
+  assert.ok(restored.includes("receipt-test\tpayment-attachment\t\\\\x89504e470d0a1a0a"));
+  assert.ok(restored.includes("123\t/media/receipt-test"));
+});
+
 test("validateBackupZip accepts a ZIP with the required files", () => {
   assert.deepEqual(validateBackupZip(makeBackupZip()), { valid: true });
 });
