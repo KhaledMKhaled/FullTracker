@@ -35,3 +35,17 @@ mtime_ms = 1791218475870
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:acbf287f-3e21-423d-b030-6c3363820cc4/e010c28c-f045-4625-9d32-8c91a8e86cbe/8de6a593-60c4-4c9a-9199-5ac43ec3b2b1"
 storage_version_token = "1791218486127777"
 content_type = "text/csv"
+
+[[outputs]]
+id = "qzCNTo4y2HvSG3FgtObBi"
+uri = "file://uploads/payments/payment-1783762245376-342334009.png"
+type = "image"
+title = "Possible recovery receipt — payment #42"
+description = "Found on the development server. Please confirm this is the correct receipt before it is copied to the live VPS."
+logical_id = "e15f99ca-b154-4976-b5e3-671de46d964b"
+content_hash = "sha256:06aa56c71559efcf29f4ef2411fa407beab4cdeaeac2a9072e27f15af1b2d769"
+size = 142842
+mtime_ms = 1785711497357
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:acbf287f-3e21-423d-b030-6c3363820cc4/e15f99ca-b154-4976-b5e3-671de46d964b/5d18dbd6-b4c7-442e-b872-0895a785c9b1"
+storage_version_token = "1791270316819847"
+content_type = "image/png"
