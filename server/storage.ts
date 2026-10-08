@@ -2514,6 +2514,12 @@ export class DatabaseStorage implements IStorage {
     const filteredShipmentIds = new Set(filteredShipments.map(s => s.id));
     const filteredPayments = allPayments.filter(p => {
       if (!baseFilteredShipmentIds.has(p.shipmentId)) return false;
+      // A company filter on this dashboard selects whole shipments and their
+      // costs, not a creditor ledger. Include supplier/legacy payments against
+      // those same shipments, and respect shipment/status/date filters.
+      if (filters?.partyType === "shipping_company" && filters.partyId) {
+        return filteredShipmentIds.has(p.shipmentId);
+      }
       if (filters?.partyType && filters.partyId) {
         if (filters.partyType === "supplier") {
           return paymentMatchesSupplier(

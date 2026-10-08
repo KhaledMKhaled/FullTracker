@@ -91,6 +91,25 @@ const createPaymentMock = mock.fn(async (data: InsertShipmentPayment) => {
 
 const storageModule = await import("../storage");
 const storage = storageModule.storage as any;
+// Fail closed: route tests must never query a real database.
+const { db, pool } = await import("../db");
+mock.method(pool, "query", async () => { throw new Error("Unexpected real database query"); });
+mock.method(pool, "connect", async () => { throw new Error("Unexpected real database connection"); });
+const assets: any[] = [];
+const mediaInsert = mock.method(db, "insert", () => ({
+  values: async (asset: any) => { assets.push(asset); },
+}) as any);
+mock.method(storage, "getShipment", async (id: number) => {
+  const s = storageState.shipments.get(id);
+  return s ? { id, ...s, purchaseCostRmb: "1000", shippingCostRmb: "1000",
+    commissionCostRmb: "1000", customsCostEgp: "1000", takhreegCostEgp: "1000",
+    purchaseRmbToEgpRate: "8" } : undefined;
+});
+mock.method(storage, "getShipmentPayments", async (id: number) =>
+  storageState.payments.filter(p => p.shipmentId === id));
+mock.method(storage, "getShipmentItems", async () =>
+  shipmentSuppliers.map(supplierId => ({ supplierId, totalPurchaseCostRmb: "1000" })));
+mock.method(storage, "getPaymentAllocationsByShipmentId", async () => []);
 const mockedCreatePayment = mock.method(storage, "createPayment", createPaymentMock);
 const mockedCreateAuditLog = mock.method(storage, "createAuditLog", createAuditLogMock);
 const mockedGetAllPayments = mock.method(storage, "getAllPayments", async () => storageState.payments);
@@ -131,6 +150,8 @@ const mockedGetShippingCompany = mock.method(
 const { registerRoutes } = await import("../routes");
 
 function resetStorageState() {
+  assets.length = 0;
+  mediaInsert.mock.resetCalls();
   storageState.shipments = new Map(
     shipmentSeeds.map(({ id, status }) => [id, { status, total: 1_000, paid: 0 }])
   );
@@ -196,7 +217,10 @@ async function createTestServer(user?: { id: string; role: string }) {
   });
 
   const httpServer = createServer(app);
-  await registerRoutes(httpServer, app);
+  const { isAuthenticated, requireRole } = await import("../auth");
+  await registerRoutes(httpServer, app, {
+    auth: { setupAuth: async () => {}, isAuthenticated, requireRole },
+  });
 
   await new Promise((resolve) => httpServer.listen(0, resolve));
   const port = (httpServer.address() as AddressInfo).port;
@@ -325,6 +349,8 @@ test("creates purchase payment with shipping company party when shipment has com
 });
 
 test("rejects invalid supplier party", async () => {
+  // Reach existence validation with valid shipment attribution first.
+  shipmentSuppliers = [999];
   const { port, close } = await createTestServer({ id: "manager-1", role: "مدير" });
 
   const response = await fetch(`http://127.0.0.1:${port}/api/payments`, {
@@ -490,4 +516,79 @@ test("blocks attachment access when unauthenticated", async () => {
   fs.unlinkSync(filePath);
 
   assert.equal(response.status, 401);
+});
+
+test("uploaded database receipt is linked to a new payment with exact metadata", async () => {
+  const { port, close } = await createTestServer({ id: "accountant-test", role: "محاسب" });
+  try {
+    const form = new FormData();
+    form.append("attachment", new Blob([samplePng], { type: "image/png" }), "receipt.png");
+    const response = await fetch(`http://127.0.0.1:${port}/api/upload/payment-attachment/direct`, { method: "POST", body: form });
+    assert.equal(response.status, 200);
+    const receipt = await response.json();
+    assert.equal(assets.length, 1);
+    assert.deepEqual(assets[0].data, samplePng);
+    assert.equal(assets[0].category, "payment-attachment");
+    assert.equal(receipt.attachmentUrl, `/media/${assets[0].id}`);
+    const result = await fetch(`http://127.0.0.1:${port}/api/payments`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...createPaymentPayload(101), ...receipt }),
+    });
+    assert.equal(result.status, 200);
+    const { data } = await result.json();
+    assert.equal(data.attachmentUrl, receipt.attachmentUrl);
+    assert.equal(data.attachmentSize, samplePng.length);
+    assert.equal(data.attachmentOriginalName, "receipt.png");
+    assert.equal(data.attachmentMimeType, "image/png");
+    assert.ok(data.attachmentUploadedAt);
+    assert.equal(data.amountEgp, "150.00");
+    assert.equal(createPaymentMock.mock.calls.length, 1);
+  } finally { await close(); }
+});
+
+test("direct upload rejects invalid bytes, disallowed types, oversized and empty requests without persistence", async () => {
+  const { port, close } = await createTestServer({ id: "manager-test", role: "مدير" });
+  try {
+    for (const file of [
+      new Blob(["fake PNG"], { type: "image/png" }),
+      new Blob(["text"], { type: "text/plain" }),
+      new Blob([new Uint8Array(MAX_ATTACHMENT_SIZE + 1)], { type: "image/png" }),
+      null,
+    ]) {
+      const form = new FormData();
+      if (file) form.append("attachment", file, "invalid.png");
+      const response = await fetch(`http://127.0.0.1:${port}/api/upload/payment-attachment/direct`, { method: "POST", body: form });
+      assert.equal(response.status, 400);
+      assert.equal(assets.length, 0);
+      assert.equal(createPaymentMock.mock.calls.length, 0);
+    }
+  } finally { await close(); }
+});
+
+test("unauthenticated and viewer users cannot upload receipts", async () => {
+  for (const user of [undefined, { id: "viewer-test", role: "مشاهد" }]) {
+    const { port, close } = await createTestServer(user);
+    try {
+      const form = new FormData();
+      form.append("attachment", new Blob([samplePng], { type: "image/png" }), "receipt.png");
+      const response = await fetch(`http://127.0.0.1:${port}/api/upload/payment-attachment/direct`, { method: "POST", body: form });
+      assert.equal(response.status, user ? 403 : 401);
+      assert.equal(assets.length, 0);
+    } finally { await close(); }
+  }
+});
+
+test("supplier belonging to another shipment is rejected before existence checks", async () => {
+  suppliersById.set(999, { id: 999, name: "Unrelated supplier" });
+  shipmentSuppliers = [1];
+  const { port, close } = await createTestServer({ id: "manager-test", role: "مدير" });
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/payments`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...createPaymentPayload(101), partyType: "supplier", partyId: 999 }),
+    });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error.code, "PARTY_MISMATCH");
+    assert.equal(createPaymentMock.mock.calls.length, 0);
+  } finally { await close(); }
 });
